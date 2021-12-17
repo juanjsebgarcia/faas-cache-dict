@@ -1,0 +1,5 @@
+[flake8]
+# E203, E501 and W503 cannot be disabled with Black
+ignore  = E203, E231, E501, W503
+max-complexity  = 24
+max-line-length = 88
