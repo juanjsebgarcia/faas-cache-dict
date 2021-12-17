@@ -14,12 +14,12 @@ class FaaSCacheDict(OrderedDict):
     """
 
     def __init__(
-        self, default_ttl, max_size_mb, max_items=sys.maxsize, *args, **kwargs
+        self, default_ttl, max_size_mb=None, max_items=sys.maxsize, *args, **kwargs
     ):
         """
         :param default_ttl: (int|float) Default object TTL in seconds
-        :param max_size_mb: (int) Max mebibyte size of cache
-        :param max_items: (int) Max length/count of items in cache
+        :param max_size_mb: (int) optional: Max mebibyte size of cache
+        :param max_items: (int) optional: Max length/count of items in cache
         :param args: (any) OrderedDict args
         :param kwargs: (any) OrderedDict kwargs
         """
@@ -31,10 +31,11 @@ class FaaSCacheDict(OrderedDict):
         self.default_ttl = default_ttl
 
         # CACHE MEMORY SIZE
-        assert isinstance(max_size_mb, int)
-        assert max_size_mb > 0
+        assert isinstance(max_size_mb, int) or (max_size_mb is None)
         self._max_size_mb = max_size_mb
-        self._max_size_bytes = mebibytes_to_bytes(max_size_mb)
+        self._max_size_bytes = None
+        if max_size_mb:
+            self._max_size_bytes = mebibytes_to_bytes(max_size_mb)
         self._self_byte_size = 0
 
         # CACHE LENGTH
@@ -58,8 +59,11 @@ class FaaSCacheDict(OrderedDict):
             return value_with_expiry[1]
 
     def __setitem__(self, key, value, override_ttl=None):
-        if (get_deep_byte_size(key) + get_deep_byte_size(value)) > self._max_size_bytes:
-            raise DataTooLarge
+        if self._max_size_bytes:
+            if (
+                get_deep_byte_size(key) + get_deep_byte_size(value)
+            ) > self._max_size_bytes:
+                raise DataTooLarge
 
         with self._lock:
             if override_ttl:
@@ -180,11 +184,13 @@ class FaaSCacheDict(OrderedDict):
 
     def change_mb_size(self, max_size_mb):
         """Set new max MB size and delete objects if required"""
-        assert isinstance(max_size_mb, int)
-        self._max_size_mb = max_size_mb
-        self._max_size_bytes = mebibytes_to_bytes(max_size_mb)
-        self._shrink_to_fit_byte_size()
-        self._set_self_byte_size()
+        with self._lock:
+            self._max_size_mb = max_size_mb
+            self._max_size_bytes = None
+            if max_size_mb:
+                self._max_size_bytes = mebibytes_to_bytes(max_size_mb)
+            self._shrink_to_fit_byte_size()
+            self._set_self_byte_size()
 
     def _set_self_byte_size(self):
         self._self_byte_size = self.get_byte_size()
@@ -192,8 +198,9 @@ class FaaSCacheDict(OrderedDict):
     def _shrink_to_fit_byte_size(self):
         with self._lock:
             self._purge_expired()
-            while self.get_byte_size() > self._max_size_bytes:
-                self._pop_oldest_item()
+            if self._max_size_bytes:
+                while self.get_byte_size() > self._max_size_bytes:
+                    self._pop_oldest_item()
 
     ###
     # LRU functions

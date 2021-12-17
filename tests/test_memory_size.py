@@ -1,4 +1,5 @@
 import time
+import uuid
 
 import pytest
 
@@ -9,6 +10,8 @@ from faas_cache_dict.faas_cache_dict import (
     mebibytes_to_bytes,
 )
 
+one_mb_text = open('tests/1_mebibyte.txt').read()
+
 
 def test_mebibytes_to_bytes():
     assert mebibytes_to_bytes(0) == 0
@@ -17,8 +20,7 @@ def test_mebibytes_to_bytes():
 
 
 def load_with_mebibyte_of_data(faas, mb):
-    one_mb_text = open('tests/1_mebibyte.txt').read()
-    faas['load'] = one_mb_text * mb
+    faas[str(uuid.uuid4())] = one_mb_text * mb
     return faas
 
 
@@ -98,3 +100,35 @@ def test_raises_if_data_oversized():
         faas['a'] = load_with_mebibyte_of_data(faas, 2)
     with pytest.raises(DataTooLarge):
         faas['a'] = load_with_mebibyte_of_data(faas, 3)
+
+
+def test_memory_size_none():
+    faas = FaaSCacheDict(default_ttl=1, max_size_mb=None)
+    load_with_mebibyte_of_data(faas, 1)
+    load_with_mebibyte_of_data(faas, 1)
+    load_with_mebibyte_of_data(faas, 1)
+    assert len(faas) == 3
+
+
+def test_memory_size_none_then_limited():
+    faas = FaaSCacheDict(default_ttl=1, max_size_mb=None)
+    load_with_mebibyte_of_data(faas, 1)
+    load_with_mebibyte_of_data(faas, 1)
+    load_with_mebibyte_of_data(faas, 1)
+    assert len(faas) == 3
+    faas.change_mb_size(1)
+    assert len(faas) == 0
+
+
+def test_memory_size_then_none():
+    faas = FaaSCacheDict(default_ttl=1, max_size_mb=2)
+    load_with_mebibyte_of_data(faas, 1)
+    assert len(faas) == 1
+    load_with_mebibyte_of_data(faas, 1)
+    assert len(faas) == 2
+    faas.change_mb_size(None)
+    assert len(faas) == 2
+    load_with_mebibyte_of_data(faas, 1)
+    load_with_mebibyte_of_data(faas, 1)
+    load_with_mebibyte_of_data(faas, 1)
+    assert len(faas) == 5
