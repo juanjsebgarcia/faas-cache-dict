@@ -22,7 +22,7 @@ setup(
     include_package_data=True,
     author='Juan Garcia Alvite',
     url='https://github.com/juanjsebgarcia/faas-cache-dict',
-    packages=find_packages(exclude=('tests',)),
+    packages=find_packages(exclude=('tests', 'scripts',)),
     python_requires='>=3.7',
     license='MIT',
     install_requires=install_requires,
