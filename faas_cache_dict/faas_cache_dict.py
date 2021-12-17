@@ -14,10 +14,10 @@ class FaaSCacheDict(OrderedDict):
     """
 
     def __init__(
-        self, default_ttl, max_size_mb=None, max_items=sys.maxsize, *args, **kwargs
+        self, default_ttl=None, max_size_mb=None, max_items=sys.maxsize, *args, **kwargs
     ):
         """
-        :param default_ttl: (int|float) Default object TTL in seconds
+        :param default_ttl: (int|float) optional: Default object TTL in seconds
         :param max_size_mb: (int) optional: Max mebibyte size of cache
         :param max_items: (int) optional: Max length/count of items in cache
         :param args: (any) OrderedDict args
