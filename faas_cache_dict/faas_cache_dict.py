@@ -37,7 +37,7 @@ class FaaSCacheDict(OrderedDict):
     ):
         """
         :param default_ttl: (int|float) optional: Default object TTL in seconds
-        :param max_size_bytes: (int|str) optional: Max byte size of cache
+        :param max_size_bytes: (int|str) optional: Max byte size of cache (1024 or '1K')
         :param max_items: (int) optional: Max length/count of items in cache
         :param args: (any) OrderedDict args
         :param kwargs: (any) OrderedDict kwargs
@@ -220,7 +220,11 @@ class FaaSCacheDict(OrderedDict):
         return get_deep_byte_size(self)
 
     def change_byte_size(self, max_size_bytes):
-        """Set new max MB size and delete objects if required"""
+        """
+        Set new max byte size and delete objects if required
+
+        :param max_size_bytes: (int|str) optional: Max byte size of cache (1024 or '1K')
+        """
         with self._lock:
             self._max_size_user = max_size_bytes
             self._max_size_bytes = None
