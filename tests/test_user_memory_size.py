@@ -26,7 +26,6 @@ def test_bytes_k_accepted():
     assert (BYTES_PER_KIBIBYTE * 100) == user_input_byte_size_to_bytes('100K')
     assert (BYTES_PER_KIBIBYTE * 1000) == user_input_byte_size_to_bytes('1000K')
 
-
     with pytest.raises(ValueError):
         user_input_byte_size_to_bytes('K')
     with pytest.raises(ValueError):
