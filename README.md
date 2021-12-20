@@ -2,6 +2,10 @@
 A Python dictionary implementation designed to act as an in-memory RAM constrained LRU
 TTL cache dict for FaaS environments.
 
+The use cases are not limited to FaaS, but if used in a serverless FaaS environment 
+then this is designed to support an existing caching strategy, as there is no guarantee
+that any data will persist between calls.
+
 This implementation uses only core Python stdlib.
 
 ## Background
