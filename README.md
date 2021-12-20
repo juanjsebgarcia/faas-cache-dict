@@ -27,7 +27,7 @@ cache = FaaSCacheDict(default_ttl=10, max_size_bytes='128M', max_items=10)
 
 cache['foo'] = 'bar'
 print(cache)
->>> <FaaSCacheDict@0x108689640; default_ttl=10, max_memory=None, max_items=10, current_memory_bytes=641, current_items=1>
+>>> <FaaSCacheDict@0x10a9daec0; default_ttl=10, max_memory=128M, max_items=10, current_memory_bytes=496, current_items=1>
 
 print(cache['foo'])
 >>> 'bar'
