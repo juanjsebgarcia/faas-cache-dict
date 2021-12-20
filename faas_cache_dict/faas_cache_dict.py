@@ -5,7 +5,17 @@ from threading import RLock
 
 __all__ = ['FaaSCacheDict']
 
+BYTES_PER_KIBIBYTE = 1024
 BYTES_PER_MEBIBYTE = 1048576
+BYTES_PER_GIBIBYTE = 1073741824
+BYTES_PER_TEBIBYTE = 1099511627776
+
+BYTE_SIZE_CONVERSIONS = {
+    'K': BYTES_PER_KIBIBYTE,
+    'M': BYTES_PER_MEBIBYTE,
+    'G': BYTES_PER_GIBIBYTE,
+    'T': BYTES_PER_TEBIBYTE,
+}
 
 
 class FaaSCacheDict(OrderedDict):
@@ -14,11 +24,16 @@ class FaaSCacheDict(OrderedDict):
     """
 
     def __init__(
-        self, default_ttl=None, max_size_mb=None, max_items=sys.maxsize, *args, **kwargs
+        self,
+        default_ttl=None,
+        max_size_bytes=None,
+        max_items=sys.maxsize,
+        *args,
+        **kwargs
     ):
         """
         :param default_ttl: (int|float) optional: Default object TTL in seconds
-        :param max_size_mb: (int) optional: Max mebibyte size of cache
+        :param max_size_bytes: (int|str) optional: Max byte size of cache
         :param max_items: (int) optional: Max length/count of items in cache
         :param args: (any) OrderedDict args
         :param kwargs: (any) OrderedDict kwargs
@@ -37,14 +52,13 @@ class FaaSCacheDict(OrderedDict):
 
         # CACHE MEMORY SIZE
         _assert(
-            isinstance(max_size_mb, int) or (max_size_mb is None), 'Invalid byte size'
+            isinstance(max_size_bytes, (int, str)) or (max_size_bytes is None),
+            'Invalid byte size',
         )
-        if max_size_mb:
-            _assert(max_size_mb > 0, 'Byte size must be >0')
-        self._max_size_mb = max_size_mb
+        self._max_size_user = max_size_bytes
         self._max_size_bytes = None
-        if max_size_mb:
-            self._max_size_bytes = mebibytes_to_bytes(max_size_mb)
+        if self._max_size_user:
+            self._max_size_bytes = user_input_byte_size_to_bytes(self._max_size_user)
         self._self_byte_size = 0
 
         # CACHE LENGTH
@@ -110,8 +124,8 @@ class FaaSCacheDict(OrderedDict):
             return super().__len__()
 
     def __repr__(self):
-        return '<FaaSCacheDict@{:#08x}; ttl={}, max_mb={}, max_items={}, length={}>'.format(
-            id(self), self.default_ttl, self._max_size_mb, self._max_items, len(self),
+        return '<FaaSCacheDict@{:#08x}; ttl={}, max_memory={}, max_items={}, length={}>'.format(
+            id(self), self.default_ttl, self._max_size_user, self._max_items, len(self),
         )
 
     ###
@@ -193,13 +207,15 @@ class FaaSCacheDict(OrderedDict):
         """Get self size in bytes"""
         return get_deep_byte_size(self)
 
-    def change_mb_size(self, max_size_mb):
+    def change_byte_size(self, max_size_bytes):
         """Set new max MB size and delete objects if required"""
         with self._lock:
-            self._max_size_mb = max_size_mb
+            self._max_size_user = max_size_bytes
             self._max_size_bytes = None
-            if max_size_mb:
-                self._max_size_bytes = mebibytes_to_bytes(max_size_mb)
+            if self._max_size_user:
+                self._max_size_bytes = user_input_byte_size_to_bytes(
+                    self._max_size_user
+                )
             self._shrink_to_fit_byte_size()
             self._set_self_byte_size()
 
@@ -223,7 +239,10 @@ class FaaSCacheDict(OrderedDict):
 
     def _pop_oldest_item(self):
         _keys = list(super().__iter__())
-        self.__delitem__(_keys[0])
+        if _keys:
+            self.__delitem__(_keys[0])
+        else:
+            raise KeyError('CannotDeleteEmptyObject')
 
 
 class DataTooLarge(ValueError):
@@ -235,10 +254,6 @@ class DataTooLarge(ValueError):
     """
 
     pass
-
-
-def mebibytes_to_bytes(mb):
-    return mb * BYTES_PER_MEBIBYTE
 
 
 def get_deep_byte_size(obj, seen=None):
@@ -281,3 +296,26 @@ def _assert(bool_, err_string=''):
         assert bool_
     except AssertionError:
         raise ValueError(err_string)
+
+
+def user_input_byte_size_to_bytes(user_bytes):
+    """
+    Convert the user input to a byte-size
+    User input may be bytes directly or a suffixed string amount such as "128M"
+    """
+    _assert(isinstance(user_bytes, (int, str)), 'Invalid byte size input')
+
+    if isinstance(user_bytes, int):
+        _assert(user_bytes > 0, 'Byte size must be >0')
+        return user_bytes
+
+    _assert(
+        user_bytes[-1].upper() in BYTE_SIZE_CONVERSIONS.keys(),
+        'Unknown byte size suffix',
+    )
+
+    quantity = float(user_bytes[0:-1])
+
+    _assert(quantity > 0, 'Memory size must be >0')
+
+    return BYTE_SIZE_CONVERSIONS[user_bytes[-1].upper()] * quantity

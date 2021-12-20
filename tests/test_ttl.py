@@ -6,13 +6,13 @@ from faas_cache_dict import FaaSCacheDict
 
 
 def test_unexpired_key_available():
-    faas = FaaSCacheDict(default_ttl=60, max_size_mb=1)
+    faas = FaaSCacheDict(default_ttl=60)
     faas['a'] = 1
     assert faas['a'] == 1
 
 
 def test_expired_key_not_available():
-    faas = FaaSCacheDict(default_ttl=0.25, max_size_mb=1)
+    faas = FaaSCacheDict(default_ttl=0.25)
     faas['a'] = 1
     assert faas['a'] == 1
     time.sleep(0.3)
@@ -21,7 +21,7 @@ def test_expired_key_not_available():
 
 
 def test_is_expired():
-    faas = FaaSCacheDict(default_ttl=0.25, max_size_mb=1)
+    faas = FaaSCacheDict(default_ttl=0.25)
     faas['a'] = 1
     assert not faas.is_expired('a')
     time.sleep(0.3)
@@ -29,7 +29,7 @@ def test_is_expired():
 
 
 def test_expire_at():
-    faas = FaaSCacheDict(default_ttl=0.1, max_size_mb=1)
+    faas = FaaSCacheDict(default_ttl=0.1)
     faas['a'] = 1
     faas.expire_at('a', time.time() + 0.2)
     time.sleep(0.1)
@@ -42,14 +42,14 @@ def test_expire_at():
 
 
 def test_set_new_default_ttl():
-    faas = FaaSCacheDict(default_ttl=1, max_size_mb=1)
+    faas = FaaSCacheDict(default_ttl=1)
     assert faas.default_ttl == 1
     faas.default_ttl = 10
     assert faas.default_ttl == 10
 
 
 def test_set_ttl():
-    faas = FaaSCacheDict(default_ttl=0.1, max_size_mb=1)
+    faas = FaaSCacheDict(default_ttl=0.1)
     faas['a'] = 1
     time.sleep(0.05)
     faas.set_ttl('a', 0.2)
@@ -60,7 +60,7 @@ def test_set_ttl():
 
 
 def test_get_ttl():
-    faas = FaaSCacheDict(default_ttl=1, max_size_mb=1)
+    faas = FaaSCacheDict(default_ttl=1)
     faas['a'] = 1
     assert faas.get_ttl('a')
     assert faas.get_ttl('a') < 1

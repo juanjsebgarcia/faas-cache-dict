@@ -2,7 +2,7 @@ from faas_cache_dict import FaaSCacheDict
 
 
 def test_respects_max_size_constraint():
-    faas = FaaSCacheDict(default_ttl=60, max_size_mb=1, max_items=2)
+    faas = FaaSCacheDict(max_items=2)
     faas['a'] = 1
     assert len(faas) == 1
     faas['b'] = 2
@@ -16,7 +16,7 @@ def test_respects_max_size_constraint():
 
 
 def test_oldest_item_at_head():
-    faas = FaaSCacheDict(default_ttl=60, max_size_mb=1, max_items=4)
+    faas = FaaSCacheDict(max_items=4)
     faas['a'] = 1
     faas['b'] = 2
     faas['c'] = 3
@@ -27,7 +27,7 @@ def test_oldest_item_at_head():
 
 
 def test_getting_item_resets_to_end():
-    faas = FaaSCacheDict(default_ttl=60, max_size_mb=1, max_items=4)
+    faas = FaaSCacheDict(max_items=4)
     faas['a'] = 1
     faas['b'] = 2
     faas['c'] = 3
@@ -40,7 +40,7 @@ def test_getting_item_resets_to_end():
 
 
 def test_pop_oldest_item():
-    faas = FaaSCacheDict(default_ttl=60, max_size_mb=1, max_items=4)
+    faas = FaaSCacheDict(max_items=4)
     faas['a'] = 1
     faas['b'] = 2
     faas['c'] = 3
