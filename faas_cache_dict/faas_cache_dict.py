@@ -28,7 +28,8 @@ class FaaSCacheDict(OrderedDict):
 
         # CACHE TTL
         _assert(
-            isinstance(default_ttl, int) or (default_ttl is None), 'Invalid TTL config'
+            isinstance(default_ttl, (int, float)) or (default_ttl is None),
+            'Invalid TTL config',
         )
         if default_ttl:
             _assert(default_ttl >= 0, 'TTL must be >=0')
