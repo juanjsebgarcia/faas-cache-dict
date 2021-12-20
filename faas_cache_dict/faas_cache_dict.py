@@ -128,8 +128,16 @@ class FaaSCacheDict(OrderedDict):
             return super().__len__()
 
     def __repr__(self):
-        return '<FaaSCacheDict@{:#08x}; ttl={}, max_memory={}, max_items={}, length={}>'.format(
-            id(self), self.default_ttl, self._max_size_user, self._max_items, len(self),
+        return (
+            '<FaaSCacheDict@{:#08x}; default_ttl={}, max_memory={}, '
+            'max_items={}, current_memory_bytes={}, current_items={}>'
+        ).format(
+            id(self),
+            self.default_ttl,
+            self._max_size_user,
+            self._max_items,
+            self._self_byte_size,
+            len(self),
         )
 
     ###
