@@ -27,11 +27,19 @@ class FaaSCacheDict(OrderedDict):
             raise SystemError('Python 3.7 or newer required.')
 
         # CACHE TTL
-        assert (default_ttl is None) or (default_ttl >= 0)
+        _assert(
+            isinstance(default_ttl, int) or (default_ttl is None), 'Invalid TTL config'
+        )
+        if default_ttl:
+            _assert(default_ttl >= 0, 'TTL must be >=0')
         self.default_ttl = default_ttl
 
         # CACHE MEMORY SIZE
-        assert isinstance(max_size_mb, int) or (max_size_mb is None)
+        _assert(
+            isinstance(max_size_mb, int) or (max_size_mb is None), 'Invalid byte size'
+        )
+        if max_size_mb:
+            _assert(max_size_mb > 0, 'Byte size must be >0')
         self._max_size_mb = max_size_mb
         self._max_size_bytes = None
         if max_size_mb:
@@ -39,10 +47,12 @@ class FaaSCacheDict(OrderedDict):
         self._self_byte_size = 0
 
         # CACHE LENGTH
+        _assert(
+            isinstance(max_items, int) or (max_items is None), 'Invalid max items limit'
+        )
+        if max_items:
+            _assert(max_items > 0, 'Max items limit must >0')
         self._max_items = max_items
-        if self._max_items:
-            assert isinstance(self._max_items, int)
-            assert self._max_items > 0
 
         self._lock = RLock()
         super().__init__()
@@ -219,7 +229,8 @@ class DataTooLarge(ValueError):
     """
     Raised if the data being added exceeds the dicts limit
 
-    This being raised means that it was not possible to store the data.
+    This being raised means that it was not possible to store the data within the
+    user set max size constraint of the dict
     """
 
     pass
@@ -258,3 +269,14 @@ def get_deep_byte_size(obj, seen=None):
         size += sum(get_deep_byte_size(i, seen) for i in obj)
 
     return size
+
+
+def _assert(bool_, err_string=''):
+    """
+    Avoid using asserts in production code
+    https://juangarcia.co.uk/python/python-smell-assert/
+    """
+    try:
+        assert bool_
+    except AssertionError:
+        raise ValueError(err_string)
