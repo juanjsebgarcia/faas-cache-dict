@@ -43,6 +43,8 @@ print(cache['foo'])
 ```
 
 ## Limitations
+- The amount of data storage will be less than the set limit as the dict has internal 
+state data (lru/ttl/etc.) which consumes a small fraction of the limit. 
 - Performance degrades with size, you will need to test this for your use case. Though
  in most circumstances this will be much faster than performing a network call to an
  external cache.
