@@ -109,8 +109,8 @@ class FaaSCacheDict(OrderedDict):
             return super().__len__()
 
     def __repr__(self):
-        return '<FaaSCacheDict@{:#08x}; ttl={}, max_mb={}, length={}>'.format(
-            id(self), self.default_ttl, self._max_size_mb, len(self),
+        return '<FaaSCacheDict@{:#08x}; ttl={}, max_mb={}, max_items={}, length={}>'.format(
+            id(self), self.default_ttl, self._max_size_mb, self._max_items, len(self),
         )
 
     ###
