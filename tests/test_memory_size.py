@@ -3,11 +3,8 @@ import uuid
 
 import pytest
 
-from faas_cache_dict.faas_cache_dict import (
-    BYTES_PER_MEBIBYTE,
-    DataTooLarge,
-    FaaSCacheDict,
-)
+from faas_cache_dict.constants import BYTES_PER_MEBIBYTE
+from faas_cache_dict.faas_cache_dict import DataTooLarge, FaaSCacheDict
 
 one_mb_text = open('tests/1_mebibyte.txt').read()
 

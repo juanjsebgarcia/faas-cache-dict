@@ -1,11 +1,11 @@
 import pytest
 
-from faas_cache_dict.faas_cache_dict import (
+from faas_cache_dict.constants import (
     BYTES_PER_GIBIBYTE,
     BYTES_PER_KIBIBYTE,
     BYTES_PER_MEBIBYTE,
-    user_input_byte_size_to_bytes,
 )
+from faas_cache_dict.faas_cache_dict import user_input_byte_size_to_bytes
 
 
 def test_bytes_int_accepted():

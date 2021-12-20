@@ -2,7 +2,7 @@
 A Python dictionary implementation designed to act as an in-memory RAM constrained LRU
 TTL cache dict for FaaS environments.
 
-The use cases are not limited to FaaS, but if used in a serverless FaaS environment 
+The use cases are not limited to FaaS, but if used in a serverless FaaS environment
 then this is designed to support an existing caching strategy, as there is no guarantee
 that any data will persist between calls.
 
@@ -43,8 +43,8 @@ print(cache['foo'])
 ```
 
 ## Limitations
-- The amount of data storage will be less than the set limit as the dict has internal 
-state data (lru/ttl/etc.) which consumes a small fraction of the limit. 
+- The amount of data storage will be less than the set limit as the dict has internal
+state data (lru/ttl/etc.) which consumes a small fraction of the limit.
 - Performance degrades with size, you will need to test this for your use case. Though
  in most circumstances this will be much faster than performing a network call to an
  external cache.
