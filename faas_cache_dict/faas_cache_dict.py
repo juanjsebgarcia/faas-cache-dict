@@ -42,9 +42,6 @@ class FaaSCacheDict(OrderedDict):
         :param args: (any) OrderedDict args
         :param kwargs: (any) OrderedDict kwargs
         """
-        if sys.version_info < (3, 7):
-            raise SystemError('Python 3.7 or newer required.')
-
         # CACHE TTL
         _assert(
             isinstance(default_ttl, (int, float)) or (default_ttl is None),
