@@ -6,7 +6,7 @@ The use cases are not limited to FaaS, but if used in a serverless FaaS environm
 then this is designed to support an existing caching strategy, as there is no guarantee
 that any data will persist between calls.
 
-This implementation uses only core Python stdlib.
+This implementation uses only core Python stdlib + [objsize](https://pypi.org/project/objsize/).
 
 ## Background
 This was originally designed to be used as an in-memory cache for AWS Lambda.
