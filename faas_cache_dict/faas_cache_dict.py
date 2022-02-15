@@ -98,7 +98,10 @@ class FaaSCacheDict(OrderedDict):
 
     def __delitem__(self, key):
         with self._lock:
-            super().__delitem__(key)
+            try:
+                super().__delitem__(key)
+            except KeyError:
+                pass
             self._set_self_byte_size()
 
     def __iter__(self):
