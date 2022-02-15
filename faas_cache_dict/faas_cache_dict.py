@@ -188,7 +188,9 @@ class FaaSCacheDict(OrderedDict):
 
             if expire:
                 if expire < now:
-                    return key
+                    return True
+
+        return False
 
     def _purge_expired(self, is_calculating_size=False):
         """Iterate through all cache items and prune all expired"""
