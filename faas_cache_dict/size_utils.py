@@ -1,5 +1,7 @@
 import sys
 
+import faas_cache_dict
+
 
 def get_deep_byte_size(obj, seen=None):
     """
@@ -15,13 +17,13 @@ def get_deep_byte_size(obj, seen=None):
 
     size = sys.getsizeof(obj)
 
+    deep_kwargs = {}
+    if isinstance(obj, faas_cache_dict.FaaSCacheDict):
+        deep_kwargs['is_calculating_size'] = True
+
     if isinstance(obj, dict):
-        size += sum(
-            get_deep_byte_size(v, seen) for v in obj.values(is_calculating_size=True)
-        )
-        size += sum(
-            get_deep_byte_size(k, seen) for k in obj.keys(is_calculating_size=True)
-        )
+        size += sum(get_deep_byte_size(v, seen) for v in obj.values(**deep_kwargs))
+        size += sum(get_deep_byte_size(k, seen) for k in obj.keys(**deep_kwargs))
 
     elif hasattr(obj, '__dict__'):
         size += get_deep_byte_size(obj.__dict__, seen)
