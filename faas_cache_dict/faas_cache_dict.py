@@ -138,19 +138,19 @@ class FaaSCacheDict(OrderedDict):
         except KeyError:
             return default
 
-    def keys(self, is_calculating_size=False):
+    def keys(self):
         with self._lock:
-            self._purge_expired(is_calculating_size)
+            self._purge_expired()
             return list(super().keys())
 
-    def items(self, is_calculating_size=False):
+    def items(self):
         with self._lock:
-            self._purge_expired(is_calculating_size)
+            self._purge_expired()
             return [(k, v[1]) for (k, v) in super().items()]
 
-    def values(self, is_calculating_size=False):
+    def values(self):
         with self._lock:
-            self._purge_expired(is_calculating_size)
+            self._purge_expired()
             return [v[1] for v in super().values()]
 
     ###
@@ -195,13 +195,12 @@ class FaaSCacheDict(OrderedDict):
 
         return False
 
-    def _purge_expired(self, is_calculating_size=False):
+    def _purge_expired(self):
         """Iterate through all cache items and prune all expired"""
         _keys = list(super().__iter__())
         _remove = [key for key in _keys if self.is_expired(key)]  # noqa
         [self.__delitem__(key) for key in _remove]
-        if not is_calculating_size:
-            self._set_self_byte_size()
+        self._set_self_byte_size()
 
     ###
     # Memory size functions
