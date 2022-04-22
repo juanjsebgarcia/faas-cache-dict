@@ -129,6 +129,18 @@ class FaaSCacheDict(OrderedDict):
             len(self),
         )
 
+    def __reduce__(self):
+        """
+        This allows the FaasCache object to be correctly pickled
+
+        It is based on the OrderedDict reducer
+        """
+        inst_dict = vars(self).copy()
+        for k in vars(OrderedDict()):
+            inst_dict.pop(k, None)
+
+        return self.__class__, (), inst_dict or None, None, iter(super().items())
+
     ###
     # Dict functions
     ###

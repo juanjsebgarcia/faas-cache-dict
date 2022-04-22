@@ -51,7 +51,7 @@ state data (lru/ttl/etc.) which consumes a small fraction of the limit.
 - The library _should_ be thread-safe, but limited testing has gone into this.
 
 ## Support
-CPython 3.7 or greater. No extra external dependencies are required.
+CPython 3.8 or greater.
 
 ## Contributions
 This code is distributed under an open license. Feel free to fork it or preferably open
