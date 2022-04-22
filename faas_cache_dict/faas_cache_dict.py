@@ -184,7 +184,10 @@ class FaaSCacheDict(OrderedDict):
             # Set new TTL and reset to bottom of queue (MRU)
             value = self.__getitem__(key)
             self.__delitem__(key)
-            super().__setitem__(key, (now + ttl, value))
+            if ttl is None:  # No expiry
+                super().__setitem__(key, (None, value))
+            else:
+                super().__setitem__(key, (now + ttl, value))
 
     def expire_at(self, key, timestamp):
         """Set the key expire timestamp (epoch seconds - ie `time.time()`)"""
