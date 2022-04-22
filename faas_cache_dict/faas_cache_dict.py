@@ -256,6 +256,18 @@ class FaaSCacheDict(OrderedDict):
     ###
     # LRU functions
     ###
+    def change_max_items(self, max_items):
+        """
+        Set new max item length and trim as required
+
+        :param max_items: (int) optional: Max length of cache
+        """
+        with self._lock:
+            self._max_items = max_items
+            if self._max_items:
+                while self._max_items <= self.__len__():
+                    self._pop_oldest_item()
+
     def _push_to_queue_end(self, key, value_with_expiry):
         """Reset the item to the end of the queue (MRU)"""
         self.__delitem__(key)
