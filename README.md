@@ -1,26 +1,87 @@
 # faas-cache-dict
-A Python dictionary implementation designed to act as an in-memory RAM constrained LRU
-TTL cache dict for FaaS environments.
+A fast thread-safe Python dictionary implementation designed to act as an in-memory RAM
+constrained LRU TTL cache dict for FaaS environments. Though it has many valuable use
+cases outside FaaS.
 
-The use cases are not limited to FaaS, but if used in a serverless FaaS environment
-then this is designed to support an existing caching strategy, as there is no guarantee
-that any data will persist between calls.
+If used in a serverless FaaS environment then this package works best by supporting an
+existing caching strategy, as there is no guarantee that any in-memory data will persist
+between calls.
 
-This implementation uses only core Python stdlib + [objsize](https://pypi.org/project/objsize/).
+This package uses only core Python stdlib +
+[objsize](https://pypi.org/project/objsize/). This is a Pythonic dict implementation
+with all the typical methods working `.get` `.keys` `.values` `.items` `len` etc.
 
 ## Background
-This was originally designed to be used as an in-memory cache for AWS Lambda.
+This was originally designed to be a performant in-memory cache for AWS Lambda,
+preventing repeated invocations making "slow" network calls to a connected ElastiCache
+Redis cluster.
 
 In most FaaS environments, successive quick invocations of the function persists
 variables in the global scope. We can leverage this to cache data in global for future
 calls.
 
 FaaS runtimes have limited RAM capacities so this library allows you to set a max byte
-size for the dict. It also allows setting an optional max items length.
+size for the cache dict. It also allows setting an optional max items length, and a TTL
+for each item.
 
 Items are kept in order with the LRU at the HEAD of the list.
 
 Items are deleted if they expire, or from the head (LRU) if the cache is out of space.
+
+## Expiry Dimensions
+Several dimensions exist to constrain the longevity of the data the cache object stores.
+These can all be combined as your use case demands. You can also use none, if you so
+wish.
+
+### Memory size
+A max memory (RAM) size the cache can use before it starts deleting the LRU values.
+This can be expressed in bytes (`1024`) or "human" format `1K` (kibibyte). Supported
+"human" expressions are `K`, `M`, `G`, `T`.
+
+```
+cache = FaaSCacheDict(max_size_bytes='128M')
+cache.change_byte_size('64M')  # If data is too large, LRU will be trimmed until it fits
+
+cache.get_byte_size()  # Returns actual memory size of data and cache structure (bytes)
+```
+
+### TTL
+The number of `*seconds*` to hold a data point before making it unavailable and then
+later purging it. This can be sub-second by using float values. This can be configured
+as a default across the cache, or on a per key basis.
+
+```
+cache = FaaSCacheDict(default_ttl=60)  # Setting it to None (default) means no expiry
+
+cache['key'] = 'value'  # Will expire in 60 seconds
+cache.set_ttl('key', 120)  # Will now expire in 120 seconds from now
+cache.get_ttl('key')
+>>> 120
+cache.set_ttl('key', None)  # Will now never expire
+
+from datetime import time
+cache.expire_at('key', time.time()) # Expire now, or a chosen time (epoch) in future
+
+cache.default_ttl = 30  # Now all *new* keys will expire in 30 seconds by default
+cache['another_key'] = 'value'  # Expires in 30 seconds as per new default
+
+<Wait 31 seconds>
+
+cache['another_key']
+>>> KeyError  # Expired
+
+cache.is_expired('another_key')
+>>> True
+```
+
+### LRU
+A max list length constraint which deletes the least recently accessed item once the max
+size is reached.
+
+```
+cache = FaaSCacheDict(max_items=10)  # Setting it to None (default) means sys.maxsize
+cache.change_max_items(5)  # If data is too large, LRU will be trimmed until it fits
+```
 
 ## Usage
 Simple usage guide:
@@ -41,14 +102,15 @@ print(cache['foo'])
 print(cache['foo'])
 >>> KeyError
 ```
+<!--- TODO: Better docs to come --->
 
-## Limitations
-- The amount of data storage will be less than the set limit as the dict has internal
-state data (lru/ttl/etc.) which consumes a small fraction of the limit.
-- Performance degrades with size, you will need to test this for your use case. Though
- in most circumstances this will be much faster than performing a network call to an
- external cache.
-- The library _should_ be thread-safe, but limited testing has gone into this.
+## Known limitations
+- The cache itself consumes a minor amount of memory in overheads, so eg. `1K` of
+requested memory will yield slightly less than `1K` of available internal storage. The
+memory constraint applies to the whole cache object not just its contents.
+- Due to extra overheads performance does **slowly** degrade with size (item count), you
+will need to test this for your situation. In 99% of use cases this will still be
+orders of magintude faster than doing network calls to an external cache.
 
 ## Support
 CPython 3.8 or greater.
@@ -58,5 +120,5 @@ This code is distributed under an open license. Feel free to fork it or preferab
 a PR.
 
 ## Inspirations
-Thanks to `mobilityhouse/ttldict` for their implementation which served as a starting
-point.
+Thanks to `mobilityhouse/ttldict` for their implementation which served as a proof of
+concept, which has since been much extended.
