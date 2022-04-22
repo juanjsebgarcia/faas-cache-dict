@@ -202,7 +202,10 @@ class FaaSCacheDict(OrderedDict):
             if now is None:
                 now = time.time()
 
-            expire, _value = super().__getitem__(key)
+            try:
+                expire, _value = super().__getitem__(key)
+            except KeyError:
+                return True
 
             if expire:
                 if expire < now:
