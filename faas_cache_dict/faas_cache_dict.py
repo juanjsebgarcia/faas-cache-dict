@@ -165,6 +165,13 @@ class FaaSCacheDict(OrderedDict):
             self._purge_expired()
             return [v[1] for v in super().values()]
 
+    def purge(self):
+        """Delete all data"""
+        with self._lock:
+            _keys = list(super().__iter__())
+            [self.__delitem__(key) for key in _keys]
+            self._set_self_byte_size()
+
     ###
     # TTL functions
     ###
