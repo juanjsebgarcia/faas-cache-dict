@@ -110,7 +110,7 @@ requested memory will yield slightly less than `1K` of available internal storag
 memory constraint applies to the whole cache object not just its contents.
 - Due to extra overheads performance does **slowly** degrade with size (item count), you
 will need to test this for your situation. In 99% of use cases this will still be
-orders of magintude faster than doing network calls to an external cache.
+orders of magnitude faster than doing network calls to an external cache.
 
 ## Support
 CPython 3.8 or greater.
