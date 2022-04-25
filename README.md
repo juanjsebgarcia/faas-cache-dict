@@ -3,16 +3,16 @@ A fast thread-safe Python dictionary implementation designed to act as an in-mem
 constrained LRU TTL cache dict for FaaS environments. Though it has many valuable use
 cases outside FaaS.
 
+This is a Pythonic dict implementation with all the typical methods working `.get`
+`.keys` `.values` `.items` `len` etc. This package uses only core Python stdlib +
+[objsize](https://pypi.org/project/objsize/).
+
 If used in a serverless FaaS environment then this package works best by supporting an
 existing caching strategy, as there is no guarantee that any in-memory data will persist
 between calls.
 
-This package uses only core Python stdlib +
-[objsize](https://pypi.org/project/objsize/). This is a Pythonic dict implementation
-with all the typical methods working `.get` `.keys` `.values` `.items` `len` etc.
-
 ## Background
-This was originally designed to be a performant in-memory cache for AWS Lambda,
+This was originally designed to be a performant in-memory cache dict for AWS Lambda,
 preventing repeated invocations making "slow" network calls to a connected ElastiCache
 Redis cluster.
 
@@ -26,31 +26,36 @@ for each item.
 
 Items are kept in order with the LRU at the HEAD of the list.
 
-Items are deleted if they expire, or from the head (LRU) if the cache is out of space.
+Items are deleted if they expire, or from the head (LRU) if the cache dict is out of
+space.
 
 ## Expiry Dimensions
-Several dimensions exist to constrain the longevity of the data the cache object stores.
+Several dimensions exist to constrain the longevity of the data the cache dict stores.
 These can all be combined as your use case demands. You can also use none, if you so
 wish.
 
 ### Memory size
-A max memory (RAM) size the cache can use before it starts deleting the LRU values.
+A max memory (RAM) size the cache dict can use before it starts deleting the LRU values.
 This can be expressed in bytes (`1024`) or "human" format `1K` (kibibyte). Supported
 "human" expressions are `K`, `M`, `G`, `T`.
 
 ```
+from faas_cache_dict import FaaSCacheDict
+
 cache = FaaSCacheDict(max_size_bytes='128M')
 cache.change_byte_size('64M')  # If data is too large, LRU will be trimmed until it fits
 
-cache.get_byte_size()  # Returns actual memory size of data and cache structure (bytes)
+cache.get_byte_size()  # Returns actual size of data and cache dict structure (bytes)
 ```
 
 ### TTL
 The number of `*seconds*` to hold a data point before making it unavailable and then
 later purging it. This can be sub-second by using float values. This can be configured
-as a default across the cache, or on a per key basis.
+as a default across the cache dict, or on a per key basis.
 
 ```
+from faas_cache_dict import FaaSCacheDict
+
 cache = FaaSCacheDict(default_ttl=60)  # Setting it to None (default) means no expiry
 
 cache['key'] = 'value'  # Will expire in 60 seconds
@@ -79,6 +84,8 @@ A max list length constraint which deletes the least recently accessed item once
 size is reached.
 
 ```
+from faas_cache_dict import FaaSCacheDict
+
 cache = FaaSCacheDict(max_items=10)  # Setting it to None (default) means sys.maxsize
 cache.change_max_items(5)  # If data is too large, LRU will be trimmed until it fits
 ```
@@ -105,12 +112,13 @@ print(cache['foo'])
 <!--- TODO: Better docs to come --->
 
 ## Known limitations
-- The cache itself consumes a minor amount of memory in overheads, so eg. `1K` of
-requested memory will yield slightly less than `1K` of available internal storage. The
-memory constraint applies to the whole cache object not just its contents.
-- Due to extra overheads performance does **slowly** degrade with size (item count), you
-will need to test this for your situation. In 99% of use cases this will still be
-orders of magnitude faster than doing network calls to an external cache.
+- The memory constraint applies to the whole cache dict object not just its contents.
+The cache dict itself consumes a small amount of memory in overheads, so eg. `1K` of
+requested memory will yield slightly less than `1K` of available internal storage.
+- Due to extra processing, performance does **slowly** degrade with size (item count),
+you will need to test this for your situation. In 99% of use cases this will still be
+an order of magnitude faster than doing network calls to an external cache (and more
+reliable).
 
 ## Support
 CPython 3.8 or greater.
