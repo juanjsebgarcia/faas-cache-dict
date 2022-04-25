@@ -61,11 +61,11 @@ cache = FaaSCacheDict(default_ttl=60)  # Setting it to None (default) means no e
 cache['key'] = 'value'  # Will expire in 60 seconds
 cache.set_ttl('key', 120)  # Will now expire in 120 seconds from now
 cache.get_ttl('key')
->>> 120
+>>> 119.9
 cache.set_ttl('key', None)  # Will now never expire
 
 from datetime import time
-cache.expire_at('key', time.time()) # Expire now, or a chosen time (epoch) in future
+cache.expire_at('key', time.time() + 5) # Expire in 5 seconds time (epoch)
 
 cache.default_ttl = 30  # Now all *new* keys will expire in 30 seconds by default
 cache['another_key'] = 'value'  # Expires in 30 seconds as per new default
