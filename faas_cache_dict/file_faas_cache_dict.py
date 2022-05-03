@@ -8,6 +8,16 @@ FILE_FAAS_CACHE_ROOT_PATH = os.environ.get('FILE_BACKED_FAAS_CACHE_ROOT_PATH')
 FILE_FAAS_PICKLE_FLAG = False
 
 
+def _do_pickle_file_load(file_):
+    """Given an opened file object attempt to unpickle"""
+    global FILE_FAAS_PICKLE_FLAG
+    FILE_FAAS_PICKLE_FLAG = True
+    loaded = pickle.load(file_)
+    FILE_FAAS_PICKLE_FLAG = False
+    loaded._lock = RLock()
+    return loaded
+
+
 class FileBackedFaaSCache(FaaSCacheDict):
     """
     An implementation of a FaaSCacheDict which can resurrect its state from disk
@@ -35,12 +45,16 @@ class FileBackedFaaSCache(FaaSCacheDict):
             with open(
                 cls.file_path_from_key_name(key_name, root_path=root_path), 'rb'
             ) as f:
-                global FILE_FAAS_PICKLE_FLAG
-                FILE_FAAS_PICKLE_FLAG = True
-                loaded = pickle.load(f)
-                FILE_FAAS_PICKLE_FLAG = False
-                loaded._lock = RLock()
-                return loaded
+                return _do_pickle_file_load(f)
+        except (EOFError, pickle.UnpicklingError):
+            # This almost certainly means the pickled file did not finish fully writing
+            # likely due to a wonky exit. Try and find an old version if exists.
+            path = cls.file_path_from_key_name(key_name, root_path=root_path)
+            try:
+                with open(f'{path}.old', 'rb') as f:
+                    return _do_pickle_file_load(f)
+            except (EOFError, FileNotFoundError):
+                raise FileNotFoundError
         except FileNotFoundError:
             obj = FileBackedFaaSCache(*args, **kwargs)
             obj.file_path = obj.file_path_from_key_name(key_name, root_path=root_path)
@@ -64,6 +78,19 @@ class FileBackedFaaSCache(FaaSCacheDict):
         """Save self pickled state to disk"""
         if not self.file_path:
             return
+
+        old_path = f'{self.file_path}.old'
+
+        try:
+            # We keep the old file in case we get a write error due to bad exit
+            os.remove(old_path)
+        except FileNotFoundError:
+            pass
+
+        try:
+            os.rename(self.file_path, old_path)
+        except FileNotFoundError:
+            pass
 
         with open(self.file_path, 'wb') as f:
             real_lock = self._lock
