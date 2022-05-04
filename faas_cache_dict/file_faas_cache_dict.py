@@ -2,6 +2,8 @@ import os
 import pickle
 from threading import RLock
 
+from filelock import FileLock, Timeout
+
 from .faas_cache_dict import FaaSCacheDict
 
 FILE_FAAS_CACHE_ROOT_PATH = os.environ.get('FILE_BACKED_FAAS_CACHE_ROOT_PATH')
@@ -79,25 +81,32 @@ class FileBackedFaaSCache(FaaSCacheDict):
         if not self.file_path:
             return
 
+        lock_path = f'{self.file_path}.lock'
         old_path = f'{self.file_path}.old'
+        lock = FileLock(lock_path, timeout=2)
 
         try:
-            # We keep the old file in case we get a write error due to bad exit
-            os.remove(old_path)
-        except FileNotFoundError:
-            pass
+            with lock:
+                try:
+                    # We keep the old file in case we get a write error due to bad exit
+                    os.remove(old_path)
+                except FileNotFoundError:
+                    pass
 
-        try:
-            os.rename(self.file_path, old_path)
-        except FileNotFoundError:
-            pass
+                try:
+                    os.rename(self.file_path, old_path)
+                except FileNotFoundError:
+                    pass
 
-        with open(self.file_path, 'wb') as f:
-            real_lock = self._lock
-            with self._lock:
-                self._lock = DummyLock()
-                pickle.dump(self, f, protocol=5)
-                self._lock = real_lock
+                with open(self.file_path, 'wb') as f:
+                    real_lock = self._lock
+                    with self._lock:
+                        self._lock = DummyLock()
+                        pickle.dump(self, f, protocol=5)
+                        self._lock = real_lock
+        except Timeout:
+            os.remove(self._lock)  # Assume because of old bad shutdown
+            self._self_to_disk()
 
     def __setitem__(self, key, value, *args, **kwargs):
         """
