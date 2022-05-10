@@ -7,15 +7,15 @@ from filelock import FileLock, Timeout
 from .faas_cache_dict import FaaSCacheDict
 
 FILE_FAAS_CACHE_ROOT_PATH = os.environ.get('FILE_BACKED_FAAS_CACHE_ROOT_PATH')
-FILE_FAAS_PICKLE_FLAG = False
+_FILE_FAAS_PICKLE_FLAG = False
 
 
 def _do_pickle_file_load(file_):
     """Given an opened file object attempt to unpickle"""
-    global FILE_FAAS_PICKLE_FLAG
-    FILE_FAAS_PICKLE_FLAG = True
+    global _FILE_FAAS_PICKLE_FLAG
+    _FILE_FAAS_PICKLE_FLAG = True
     loaded = pickle.load(file_)
-    FILE_FAAS_PICKLE_FLAG = False
+    _FILE_FAAS_PICKLE_FLAG = False
     loaded._lock = RLock()
     return loaded
 
@@ -114,12 +114,13 @@ class FileBackedFaaSCache(FaaSCacheDict):
 
         Has some custom logic for handling rehydrating a pickled object
         """
-        if FILE_FAAS_PICKLE_FLAG:
+        if _FILE_FAAS_PICKLE_FLAG:
             expire, value = value
             r = super().__setitem__(key, value, *args, override_ttl=expire, **kwargs)
         else:
             r = super().__setitem__(key, value, *args, **kwargs)
         self._self_to_disk()
+
         return r
 
     def __delitem__(self, key):
