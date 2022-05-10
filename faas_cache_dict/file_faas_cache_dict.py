@@ -49,7 +49,7 @@ class FileBackedFaaSCache(FaaSCacheDict):
         cls.file_path = cls.file_path_from_key_name(key_name, root_path=root_path)
         cls.lock_path = f'{cls.file_path}.lock'
         cls.old_path = f'{cls.file_path}.old'
-        cls.file_lock = FileLock(cls.lock_path, timeout=2)
+        cls.file_lock = FileLock(cls.lock_path, timeout=-1)
 
         try:
             with cls.file_lock:
@@ -84,6 +84,9 @@ class FileBackedFaaSCache(FaaSCacheDict):
 
     def _self_to_disk(self):
         """Save self pickled state to disk"""
+        if _FILE_FAAS_PICKLE_FLAG:
+            return
+
         if not self.file_path:
             return
         try:
