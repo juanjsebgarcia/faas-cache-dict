@@ -33,6 +33,9 @@ class FileBackedFaaSCache(FaaSCacheDict):
     """
 
     file_path = None
+    lock_path = None
+    old_path = None
+    file_lock = None
 
     @classmethod
     def init(cls, key_name, *args, root_path=FILE_FAAS_CACHE_ROOT_PATH, **kwargs):
@@ -43,23 +46,26 @@ class FileBackedFaaSCache(FaaSCacheDict):
         Tries to open an existing saved state if it exists else create a new
         object and save it
         """
+        cls.file_path = cls.file_path_from_key_name(key_name, root_path=root_path)
+        cls.lock_path = f'{cls.file_path}.lock'
+        cls.old_path = f'{cls.file_path}.old'
+        cls.file_lock = FileLock(cls.lock_path, timeout=2)
+
         try:
-            with open(
-                cls.file_path_from_key_name(key_name, root_path=root_path), 'rb'
-            ) as f:
-                return _do_pickle_file_load(f)
+            with cls.file_lock:
+                with open(cls.file_path, 'rb') as f:
+                    return _do_pickle_file_load(f)
         except (EOFError, pickle.UnpicklingError):
             # This almost certainly means the pickled file did not finish fully writing
             # likely due to a wonky exit. Try and find an old version if exists.
-            path = cls.file_path_from_key_name(key_name, root_path=root_path)
             try:
-                with open(f'{path}.old', 'rb') as f:
-                    return _do_pickle_file_load(f)
+                with cls.file_lock:
+                    with open(cls.old_path, 'rb') as f:
+                        return _do_pickle_file_load(f)
             except (EOFError, FileNotFoundError):
                 raise FileNotFoundError
         except FileNotFoundError:
             obj = FileBackedFaaSCache(*args, **kwargs)
-            obj.file_path = obj.file_path_from_key_name(key_name, root_path=root_path)
             obj._self_to_disk()
             return obj
 
@@ -80,32 +86,26 @@ class FileBackedFaaSCache(FaaSCacheDict):
         """Save self pickled state to disk"""
         if not self.file_path:
             return
-
-        lock_path = f'{self.file_path}.lock'
-        old_path = f'{self.file_path}.old'
-        lock = FileLock(lock_path, timeout=2)
-
         try:
-            with lock:
+            with self.file_lock:
                 try:
                     # We keep the old file in case we get a write error due to bad exit
-                    os.remove(old_path)
+                    os.remove(self.old_path)
                 except FileNotFoundError:
                     pass
 
                 try:
-                    os.rename(self.file_path, old_path)
+                    os.rename(self.file_path, self.old_path)
                 except FileNotFoundError:
                     pass
 
                 with open(self.file_path, 'wb') as f:
                     real_lock = self._lock
-                    with self._lock:
-                        self._lock = DummyLock()
-                        pickle.dump(self, f, protocol=5)
-                        self._lock = real_lock
+                    self._lock = DummyLock()
+                    pickle.dump(self, f, protocol=5)
+                    self._lock = real_lock
         except Timeout:
-            os.remove(self._lock)  # Assume because of old bad shutdown
+            os.remove(self.lock_path)  # Assume because of old bad shutdown
             self._self_to_disk()
 
     def __setitem__(self, key, value, *args, **kwargs):
