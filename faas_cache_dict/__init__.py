@@ -1,6 +1,6 @@
 import sys
 
-__version__ = "0.2.7"
+__version__ = "0.2.8"
 
 
 if sys.version_info < (3, 8):
