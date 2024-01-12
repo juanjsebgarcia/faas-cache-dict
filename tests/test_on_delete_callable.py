@@ -50,10 +50,6 @@ def test_non_terminal_deletes_do_not_hook():
     faas["a"] = 1
     faas["b"] = 2
     faas["c"] = 3
-    import ipdb
-
-    ipdb.set_trace()
-
     faas["a"] = 1  # Make MRU
 
     mock.delete.assert_not_called()

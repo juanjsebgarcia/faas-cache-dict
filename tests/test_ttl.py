@@ -28,6 +28,13 @@ def test_is_expired():
     assert faas.is_expired("a")
 
 
+def test_unknown_key_is_null_expired():
+    faas = FaaSCacheDict()
+    faas["a"] = 1
+    assert faas.is_expired("a") is False
+    assert faas.is_expired("b") is None
+
+
 def test_expire_at():
     faas = FaaSCacheDict(default_ttl=0.1)
     faas["a"] = 1

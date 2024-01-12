@@ -123,7 +123,7 @@ class FaaSCacheDict(OrderedDict):
         """Yield non-expired keys, without purging the expired ones"""
         with self._lock:
             for key in super().__iter__():
-                if not self.is_expired(key):
+                if self.is_expired(key) is False:
                     yield key
 
     def __len__(self):
@@ -227,7 +227,7 @@ class FaaSCacheDict(OrderedDict):
             try:
                 expire, _value = super().__getitem__(key)
             except KeyError:
-                return True
+                return None  # unknown
 
             if expire:
                 if expire < now:
