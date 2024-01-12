@@ -40,7 +40,7 @@ def test_getting_item_resets_to_end():
     assert len(faas.keys()) == 4
 
 
-def test_pop_oldest_item():
+def test_delete_oldest_item():
     faas = FaaSCacheDict(max_items=4)
     faas["a"] = 1
     faas["b"] = 2
@@ -48,6 +48,6 @@ def test_pop_oldest_item():
     faas["d"] = 4
 
     assert list(faas.keys())[0] == "a"
-    faas._pop_oldest_item()
+    faas.delete_oldest_item()
     assert list(faas.keys())[0] == "b"
     assert len(faas.keys()) == 3

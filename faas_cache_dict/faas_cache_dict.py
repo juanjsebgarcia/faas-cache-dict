@@ -95,9 +95,9 @@ class FaaSCacheDict(OrderedDict):
             if self._max_items:
                 if (
                     key not in self.keys()
-                ):  # If refreshing an existing key size remains constant
+                ):  # If refreshing an existing key then size remains constant
                     while self._max_items <= self.__len__():
-                        self._pop_oldest_item()
+                        self.delete_oldest_item()
 
             super().__setitem__(key, (expire, value))
             super().move_to_end(key)
@@ -273,7 +273,7 @@ class FaaSCacheDict(OrderedDict):
             self._purge_expired()
             if self._max_size_bytes:
                 while self.get_byte_size() > self._max_size_bytes:
-                    self._pop_oldest_item()
+                    self.delete_oldest_item()
 
     ###
     # LRU functions
@@ -288,9 +288,12 @@ class FaaSCacheDict(OrderedDict):
             self._max_items = max_items
             if self._max_items:
                 while self._max_items <= self.__len__():
-                    self._pop_oldest_item()
+                    self.delete_oldest_item()
 
-    def _pop_oldest_item(self):
+    def delete_oldest_item(self):
+        """
+        Remove the oldest item in the cache, which is the HEAD
+        """
         _keys = list(super().__iter__())
         if _keys:
             self.__delitem__(_keys[0])
