@@ -181,7 +181,7 @@ class FaaSCacheDict(OrderedDict):
             return [v[1] for v in super().values()]
 
     def purge(self):
-        """Delete all data"""
+        """Delete all data in the cache"""
         with self._lock:
             _keys = list(super().__iter__())
             [self.__delitem__(key, ignore_missing=True) for key in _keys]
@@ -191,7 +191,7 @@ class FaaSCacheDict(OrderedDict):
     # TTL functions
     ###
     def get_ttl(self, key, now=None):
-        """Return remaining TTL for a key"""
+        """Return remaining delta TTL for a key from now"""
         if now is None:
             now = time.time()
         with self._lock:
@@ -199,9 +199,10 @@ class FaaSCacheDict(OrderedDict):
             return expire - now
 
     def set_ttl(self, key, ttl, now=None):
-        """Set TTL for the given key"""
+        """Set TTL for the given key, this will be set ttl seconds ahead of now"""
         if now is None:
             now = time.time()
+        _assert(ttl >= 0, "TTL must be in the future")
         with self._lock:
             # Set new TTL and reset to bottom of queue (MRU)
             value = self.__getitem__(key)
@@ -211,7 +212,7 @@ class FaaSCacheDict(OrderedDict):
                 super().__setitem__(key, (now + ttl, value))
 
     def expire_at(self, key, timestamp):
-        """Set the key expire timestamp (epoch seconds - ie `time.time()`)"""
+        """Set the key expire absolute timestamp (epoch seconds - ie `time.time()`)"""
         with self._lock:
             value = self.__getitem__(key)
             super().__setitem__(key, (timestamp, value))
@@ -239,7 +240,7 @@ class FaaSCacheDict(OrderedDict):
         return False
 
     def _purge_expired(self):
-        """Iterate through all cache items and prune all expired"""
+        """Iterate through all cache items and prune all expired keys"""
         _keys = list(super().__iter__())
         _remove = [key for key in _keys if self.is_expired(key)]  # noqa
         [self.__delitem__(key, ignore_missing=True) for key in _remove]
@@ -250,7 +251,9 @@ class FaaSCacheDict(OrderedDict):
     ###
     def get_byte_size(self):
         """Get self size in bytes"""
-        return get_deep_byte_size(self)
+        byte_size = get_deep_byte_size(self)
+        self._self_byte_size = byte_size  # May as well!
+        return byte_size
 
     def change_byte_size(self, max_size_bytes):
         """
@@ -268,9 +271,11 @@ class FaaSCacheDict(OrderedDict):
             self._shrink_to_fit_byte_size()
 
     def _set_self_byte_size(self):
+        """Calculate and set the new internal cache size"""
         self._self_byte_size = self.get_byte_size()
 
     def _shrink_to_fit_byte_size(self):
+        """As required delete the oldest LRU items in the cache dict until size criteria is met"""
         with self._lock:
             self._purge_expired()
             if self._max_size_bytes:
@@ -285,7 +290,7 @@ class FaaSCacheDict(OrderedDict):
         """
         Set new max item length and trim as required
 
-        :param max_items: (int) optional: Max length of cache
+        :param max_items: (int) optional: Max length of cache, `None` to disable max-length
         """
         with self._lock:
             self._max_items = max_items
@@ -295,7 +300,7 @@ class FaaSCacheDict(OrderedDict):
 
     def delete_oldest_item(self):
         """
-        Remove the oldest item in the cache, which is the HEAD
+        Remove the oldest item in the cache, which is the HEAD of the OrderedDict
         """
         with self._lock:
             _keys = list(super().__iter__())

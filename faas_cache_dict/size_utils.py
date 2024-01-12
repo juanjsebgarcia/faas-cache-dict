@@ -1,4 +1,5 @@
 import objsize
+
 from .constants import BYTE_SIZE_CONVERSIONS
 from .utils import _assert
 
