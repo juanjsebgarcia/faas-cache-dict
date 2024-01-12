@@ -104,7 +104,7 @@ class FaaSCacheDict(OrderedDict):
             self._shrink_to_fit_byte_size()
             self._set_self_byte_size()
 
-    def __delitem__(self, key, is_terminal=True):
+    def __delitem__(self, key, is_terminal=True, ignore_missing=False):
         with self._lock:
             try:
                 if self.on_delete_callable and is_terminal:
@@ -115,9 +115,11 @@ class FaaSCacheDict(OrderedDict):
                         print(f"FaasCacheDict: on_delete_callable caused exc: {err}")
                         pass
                 super().__delitem__(key)
-            except KeyError:
-                pass
-            self._set_self_byte_size()
+            except KeyError as err:
+                if not ignore_missing:
+                    raise err
+            finally:
+                self._set_self_byte_size()
 
     def __iter__(self):
         """Yield non-expired keys, without purging the expired ones"""
@@ -184,7 +186,7 @@ class FaaSCacheDict(OrderedDict):
         """Delete all data"""
         with self._lock:
             _keys = list(super().__iter__())
-            [self.__delitem__(key) for key in _keys]
+            [self.__delitem__(key, ignore_missing=True) for key in _keys]
             self._set_self_byte_size()
 
     ###
@@ -205,7 +207,6 @@ class FaaSCacheDict(OrderedDict):
         with self._lock:
             # Set new TTL and reset to bottom of queue (MRU)
             value = self.__getitem__(key)
-            self.__delitem__(key, is_terminal=False)
             if ttl is None:  # No expiry
                 super().__setitem__(key, (None, value))
             else:
@@ -215,7 +216,6 @@ class FaaSCacheDict(OrderedDict):
         """Set the key expire timestamp (epoch seconds - ie `time.time()`)"""
         with self._lock:
             value = self.__getitem__(key)
-            self.__delitem__(key, is_terminal=False)
             super().__setitem__(key, (timestamp, value))
 
     def is_expired(self, key, now=None):
@@ -239,7 +239,7 @@ class FaaSCacheDict(OrderedDict):
         """Iterate through all cache items and prune all expired"""
         _keys = list(super().__iter__())
         _remove = [key for key in _keys if self.is_expired(key)]  # noqa
-        [self.__delitem__(key) for key in _remove]
+        [self.__delitem__(key, ignore_missing=True) for key in _remove]
         self._set_self_byte_size()
 
     ###

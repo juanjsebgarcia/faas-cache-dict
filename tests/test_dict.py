@@ -22,6 +22,8 @@ def test_delete_op():
     assert faas["a"] == 1
     with pytest.raises(KeyError):
         assert faas["b"] == 1
+    with pytest.raises(KeyError):
+        del faas["unknown"]
 
 
 def test_get_op():
