@@ -90,6 +90,23 @@ cache = FaaSCacheDict(max_items=10)  # Setting it to None (default) means sys.ma
 cache.change_max_items(5)  # If data is too large, LRU will be trimmed until it fits
 ```
 
+### Lifecycle hooks
+A hook exists enabling post-deletion lifecycle events, for example if a networked resource 
+is deleted from the cache dict you may wish to perform dependency clean up.
+
+```
+from faas_cache_dict import FaaSCacheDict
+
+def post_deletion_hook(key, value):
+    pass  # do stuff here
+    
+cache = FaaSCacheDict(max_items=5, on_delete_callable=post_deletion_hook)
+```
+
+Note that even if the post_deletion_callable fails, the item will still be purged 
+from the cache dict. You are responsible for implementing your own error handling.
+
+
 ## Usage
 Simple usage guide:
 ```

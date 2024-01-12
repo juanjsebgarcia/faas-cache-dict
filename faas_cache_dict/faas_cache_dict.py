@@ -21,8 +21,9 @@ class FaaSCacheDict(OrderedDict):
         default_ttl=None,
         max_size_bytes=None,
         max_items=sys.maxsize,
+        on_delete_callable=None,
         *args,
-        **kwargs
+        **kwargs,
     ):
         """
         :param default_ttl: (int|float) optional: Default object TTL in seconds
@@ -58,6 +59,9 @@ class FaaSCacheDict(OrderedDict):
         if max_items:
             _assert(max_items > 0, "Max items limit must >0")
         self._max_items = max_items
+
+        # Lifecycle callables
+        self.on_delete_callable = on_delete_callable
 
         self._lock = RLock()
         super().__init__()
@@ -99,6 +103,13 @@ class FaaSCacheDict(OrderedDict):
     def __delitem__(self, key):
         with self._lock:
             try:
+                if self.on_delete_callable:
+                    try:
+                        self.on_delete_callable(key, super().__getitem__(key)[1])
+                    except Exception as err:
+                        # Prevent user code from breaking FaasCacheDict ops
+                        print(f"FaasCacheDict: on_delete_callable caused exc: {err}")
+                        pass
                 super().__delitem__(key)
             except KeyError:
                 pass
