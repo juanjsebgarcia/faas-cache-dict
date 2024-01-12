@@ -28,6 +28,7 @@ class FaaSCacheDict(OrderedDict):
         :param default_ttl: (int|float) optional: Default object TTL in seconds
         :param max_size_bytes: (int|str) optional: Max byte size of cache (1024 or '1K')
         :param max_items: (int) optional: Max length/count of items in cache
+        :param on_delete_callable (callable) optional: Hook which is called on object deletion
         :param args: (any) OrderedDict args
         :param kwargs: (any) OrderedDict kwargs
         """
@@ -216,7 +217,12 @@ class FaaSCacheDict(OrderedDict):
             super().__setitem__(key, (timestamp, value))
 
     def is_expired(self, key, now=None):
-        """Check if key has expired, and return it if so"""
+        """
+        Check if key has expired, and return it if so.
+
+        Note: A historic key may have expired and have since been
+        deleted in which case this will return `None` as its state is unknown.
+        """
         with self._lock:
             if now is None:
                 now = time.time()
@@ -291,8 +297,9 @@ class FaaSCacheDict(OrderedDict):
         """
         Remove the oldest item in the cache, which is the HEAD
         """
-        _keys = list(super().__iter__())
-        if _keys:
-            self.__delitem__(_keys[0])
-        else:
-            raise KeyError("CannotDeleteEmptyObject")
+        with self._lock:
+            _keys = list(super().__iter__())
+            if _keys:
+                self.__delitem__(_keys[0])
+            else:
+                raise KeyError("EmptyCache")
