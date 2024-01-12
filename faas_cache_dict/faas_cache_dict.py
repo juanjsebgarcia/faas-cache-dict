@@ -85,11 +85,10 @@ class FaaSCacheDict(OrderedDict):
                 raise DataTooLarge
 
         with self._lock:
+            expire = None
             if override_ttl:
                 expire = override_ttl
-            elif self.default_ttl is None:
-                expire = None
-            else:
+            elif self.default_ttl:
                 expire = time.time() + self.default_ttl
 
             if self._max_items:
