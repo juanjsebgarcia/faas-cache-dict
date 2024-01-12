@@ -102,7 +102,6 @@ class FaaSCacheDict(OrderedDict):
             super().__setitem__(key, (expire, value))
             super().move_to_end(key)
             self._shrink_to_fit_byte_size()
-            self._set_self_byte_size()
 
     def __delitem__(self, key, is_terminal=True, ignore_missing=False):
         with self._lock:
@@ -263,7 +262,6 @@ class FaaSCacheDict(OrderedDict):
                     self._max_size_user
                 )
             self._shrink_to_fit_byte_size()
-            self._set_self_byte_size()
 
     def _set_self_byte_size(self):
         self._self_byte_size = self.get_byte_size()
@@ -274,6 +272,7 @@ class FaaSCacheDict(OrderedDict):
             if self._max_size_bytes:
                 while self.get_byte_size() > self._max_size_bytes:
                     self.delete_oldest_item()
+            self._set_self_byte_size()
 
     ###
     # LRU functions
