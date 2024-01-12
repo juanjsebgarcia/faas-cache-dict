@@ -6,7 +6,7 @@ from filelock import FileLock, Timeout
 
 from .faas_cache_dict import FaaSCacheDict
 
-FILE_FAAS_CACHE_ROOT_PATH = os.environ.get('FILE_BACKED_FAAS_CACHE_ROOT_PATH')
+FILE_FAAS_CACHE_ROOT_PATH = os.environ.get("FILE_BACKED_FAAS_CACHE_ROOT_PATH")
 _FILE_FAAS_PICKLE_FLAG = False
 
 
@@ -47,20 +47,20 @@ class FileBackedFaaSCache(FaaSCacheDict):
         object and save it
         """
         cls.file_path = cls.file_path_from_key_name(key_name, root_path=root_path)
-        cls.lock_path = f'{cls.file_path}.lock'
-        cls.old_path = f'{cls.file_path}.old'
+        cls.lock_path = f"{cls.file_path}.lock"
+        cls.old_path = f"{cls.file_path}.old"
         cls.file_lock = FileLock(cls.lock_path, timeout=-1)
 
         try:
             with cls.file_lock:
-                with open(cls.file_path, 'rb') as f:
+                with open(cls.file_path, "rb") as f:
                     return _do_pickle_file_load(f)
         except (EOFError, pickle.UnpicklingError):
             # This almost certainly means the pickled file did not finish fully writing
             # likely due to a wonky exit. Try and find an old version if exists.
             try:
                 with cls.file_lock:
-                    with open(cls.old_path, 'rb') as f:
+                    with open(cls.old_path, "rb") as f:
                         return _do_pickle_file_load(f)
             except (EOFError, FileNotFoundError):
                 raise FileNotFoundError
@@ -71,16 +71,16 @@ class FileBackedFaaSCache(FaaSCacheDict):
 
     @staticmethod
     def file_path_from_key_name(key_name, root_path):
-        if not key_name.endswith('.faas'):
-            key_name = f'{key_name}.faas'
+        if not key_name.endswith(".faas"):
+            key_name = f"{key_name}.faas"
 
         if root_path is None:
             return key_name
 
-        if not root_path.endswith('/'):
-            root_path = f'{root_path}/'
+        if not root_path.endswith("/"):
+            root_path = f"{root_path}/"
 
-        return f'{root_path}{key_name}'
+        return f"{root_path}{key_name}"
 
     def _self_to_disk(self):
         """Save self pickled state to disk"""
@@ -102,7 +102,7 @@ class FileBackedFaaSCache(FaaSCacheDict):
                 except FileNotFoundError:
                     pass
 
-                with open(self.file_path, 'wb') as f:
+                with open(self.file_path, "wb") as f:
                     real_lock = self._lock
                     self._lock = DummyLock()
                     pickle.dump(self, f, protocol=5)

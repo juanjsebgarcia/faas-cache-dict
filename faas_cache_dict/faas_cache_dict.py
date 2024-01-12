@@ -8,7 +8,7 @@ from .exceptions import DataTooLarge
 from .size_utils import get_deep_byte_size
 from .utils import _assert
 
-__all__ = ['FaaSCacheDict']
+__all__ = ["FaaSCacheDict"]
 
 
 class FaaSCacheDict(OrderedDict):
@@ -34,16 +34,16 @@ class FaaSCacheDict(OrderedDict):
         # CACHE TTL
         _assert(
             isinstance(default_ttl, (int, float)) or (default_ttl is None),
-            'Invalid TTL config',
+            "Invalid TTL config",
         )
         if default_ttl:
-            _assert(default_ttl >= 0, 'TTL must be >=0')
+            _assert(default_ttl >= 0, "TTL must be >=0")
         self.default_ttl = default_ttl
 
         # CACHE MEMORY SIZE
         _assert(
             isinstance(max_size_bytes, (int, str)) or (max_size_bytes is None),
-            'Invalid byte size',
+            "Invalid byte size",
         )
         self._max_size_user = max_size_bytes
         self._max_size_bytes = None
@@ -53,10 +53,10 @@ class FaaSCacheDict(OrderedDict):
 
         # CACHE LENGTH
         _assert(
-            isinstance(max_items, int) or (max_items is None), 'Invalid max items limit'
+            isinstance(max_items, int) or (max_items is None), "Invalid max items limit"
         )
         if max_items:
-            _assert(max_items > 0, 'Max items limit must >0')
+            _assert(max_items > 0, "Max items limit must >0")
         self._max_items = max_items
 
         self._lock = RLock()
@@ -118,8 +118,8 @@ class FaaSCacheDict(OrderedDict):
 
     def __repr__(self):
         return (
-            '<FaaSCacheDict@{:#08x}; default_ttl={}, max_memory={}, '
-            'max_items={}, current_memory_bytes={}, current_items={}>'
+            "<FaaSCacheDict@{:#08x}; default_ttl={}, max_memory={}, "
+            "max_items={}, current_memory_bytes={}, current_items={}>"
         ).format(
             id(self),
             self.default_ttl,
@@ -285,7 +285,7 @@ class FaaSCacheDict(OrderedDict):
         if _keys:
             self.__delitem__(_keys[0])
         else:
-            raise KeyError('CannotDeleteEmptyObject')
+            raise KeyError("CannotDeleteEmptyObject")
 
 
 def user_input_byte_size_to_bytes(user_bytes):
@@ -294,19 +294,19 @@ def user_input_byte_size_to_bytes(user_bytes):
 
     User input may be bytes directly or a suffixed string amount such as '128.0M'
     """
-    _assert(isinstance(user_bytes, (int, str)), 'Invalid byte size input')
+    _assert(isinstance(user_bytes, (int, str)), "Invalid byte size input")
 
     if isinstance(user_bytes, int):
-        _assert(user_bytes > 0, 'Byte size must be >0')
+        _assert(user_bytes > 0, "Byte size must be >0")
         return user_bytes
 
     _assert(
         user_bytes[-1].upper() in BYTE_SIZE_CONVERSIONS.keys(),
-        'Unknown byte size suffix',
+        "Unknown byte size suffix",
     )
 
     quantity = float(user_bytes[0:-1])
 
-    _assert(quantity > 0, 'Memory size must be >0')
+    _assert(quantity > 0, "Memory size must be >0")
 
     return BYTE_SIZE_CONVERSIONS[user_bytes[-1].upper()] * quantity
