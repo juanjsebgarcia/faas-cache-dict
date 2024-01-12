@@ -37,6 +37,7 @@ def test_getting_item_resets_to_end():
     _ = faas["a"]
     assert list(faas.keys())[0] == "b"
     assert list(faas.keys())[-1] == "a"
+    assert len(faas.keys()) == 4
 
 
 def test_pop_oldest_item():
@@ -49,3 +50,4 @@ def test_pop_oldest_item():
     assert list(faas.keys())[0] == "a"
     faas._pop_oldest_item()
     assert list(faas.keys())[0] == "b"
+    assert len(faas.keys()) == 3
