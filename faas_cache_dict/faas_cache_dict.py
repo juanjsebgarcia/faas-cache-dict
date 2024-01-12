@@ -74,7 +74,7 @@ class FaaSCacheDict(OrderedDict):
                 self.__delitem__(key)
                 raise KeyError
             value_with_expiry = super().__getitem__(key)
-            self._push_to_queue_end(key, value_with_expiry)
+            super().move_to_end(key)
             return value_with_expiry[1]
 
     def __setitem__(self, key, value, override_ttl=None):
@@ -93,17 +93,21 @@ class FaaSCacheDict(OrderedDict):
                 expire = time.time() + self.default_ttl
 
             if self._max_items:
-                while self._max_items <= self.__len__():
-                    self._pop_oldest_item()
+                if (
+                    key not in self.keys()
+                ):  # If refreshing an existing key size remains constant
+                    while self._max_items <= self.__len__():
+                        self._pop_oldest_item()
 
             super().__setitem__(key, (expire, value))
+            super().move_to_end(key)
             self._shrink_to_fit_byte_size()
             self._set_self_byte_size()
 
-    def __delitem__(self, key):
+    def __delitem__(self, key, is_terminal=True):
         with self._lock:
             try:
-                if self.on_delete_callable:
+                if self.on_delete_callable and is_terminal:
                     try:
                         self.on_delete_callable(key, super().__getitem__(key)[1])
                     except Exception as err:
@@ -201,7 +205,7 @@ class FaaSCacheDict(OrderedDict):
         with self._lock:
             # Set new TTL and reset to bottom of queue (MRU)
             value = self.__getitem__(key)
-            self.__delitem__(key)
+            self.__delitem__(key, is_terminal=False)
             if ttl is None:  # No expiry
                 super().__setitem__(key, (None, value))
             else:
@@ -211,7 +215,7 @@ class FaaSCacheDict(OrderedDict):
         """Set the key expire timestamp (epoch seconds - ie `time.time()`)"""
         with self._lock:
             value = self.__getitem__(key)
-            self.__delitem__(key)
+            self.__delitem__(key, is_terminal=False)
             super().__setitem__(key, (timestamp, value))
 
     def is_expired(self, key, now=None):
@@ -285,11 +289,6 @@ class FaaSCacheDict(OrderedDict):
             if self._max_items:
                 while self._max_items <= self.__len__():
                     self._pop_oldest_item()
-
-    def _push_to_queue_end(self, key, value_with_expiry):
-        """Reset the item to the end of the queue (MRU)"""
-        self.__delitem__(key)
-        self.__setitem__(key, value_with_expiry[1], override_ttl=value_with_expiry[0])
 
     def _pop_oldest_item(self):
         _keys = list(super().__iter__())
