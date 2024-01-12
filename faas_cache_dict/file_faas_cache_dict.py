@@ -22,6 +22,8 @@ def _do_pickle_file_load(file_):
 
 class FileBackedFaaSCache(FaaSCacheDict):
     """
+    ALPHA CODE: DO NOT USE.
+
     An implementation of a FaaSCacheDict which can resurrect its state from disk
     if for whatever reason it is dropped from memory (eg. app restart)
 
