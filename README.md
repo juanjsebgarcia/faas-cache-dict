@@ -1,4 +1,7 @@
 # faas-cache-dict
+
+[PyPi package repository](https://pypi.org/project/faas-cache-dict/)
+
 A fast thread-safe Python dictionary implementation designed to act as an in-memory RAM
 constrained LRU TTL cache dict for FaaS environments. Though it has many valuable use
 cases outside FaaS.
