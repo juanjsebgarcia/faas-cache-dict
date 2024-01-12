@@ -122,3 +122,36 @@ def test_memory_size_then_none():
     load_with_mebibyte_of_data(faas, 1)
     load_with_mebibyte_of_data(faas, 1)
     assert len(faas) == 5
+
+
+def test_change_max_size():
+    faas = FaaSCacheDict(max_items=20)
+    faas["a"] = 1
+    faas["b"] = 2
+    faas["c"] = 3
+    faas["d"] = 4
+    faas["e"] = 5
+
+    faas.change_max_items(2)
+
+    assert len(faas) == 2
+
+    assert faas.keys() == ["d", "e"]
+
+
+def test_change_max_size_with_expired():
+    faas = FaaSCacheDict(max_items=20)
+    faas["a"] = 1
+    faas["b"] = 2
+    faas["c"] = 3
+    faas["d"] = 4
+    faas["e"] = 5
+
+    faas.expire_at("d", 10)
+
+    faas.change_max_items(2)
+
+    assert len(faas) == 2
+
+    assert faas.keys() == ["c", "e"]
+

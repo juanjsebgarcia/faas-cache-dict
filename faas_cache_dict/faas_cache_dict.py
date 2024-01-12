@@ -56,7 +56,7 @@ class FaaSCacheDict(OrderedDict):
         _assert(
             isinstance(max_items, int) or (max_items is None), "Invalid max items limit"
         )
-        if max_items:
+        if max_items is not None:
             _assert(max_items > 0, "Max items limit must >0")
         self._max_items = max_items
 
@@ -295,7 +295,7 @@ class FaaSCacheDict(OrderedDict):
         with self._lock:
             self._max_items = max_items
             if self._max_items:
-                while self._max_items <= self.__len__():
+                while self._max_items < self.__len__():
                     self.delete_oldest_item()
 
     def delete_oldest_item(self):
