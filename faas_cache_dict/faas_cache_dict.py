@@ -3,9 +3,8 @@ import time
 from collections import OrderedDict
 from threading import RLock
 
-from .constants import BYTE_SIZE_CONVERSIONS
 from .exceptions import DataTooLarge
-from .size_utils import get_deep_byte_size
+from .size_utils import get_deep_byte_size, user_input_byte_size_to_bytes
 from .utils import _assert
 
 __all__ = ["FaaSCacheDict"]
@@ -297,27 +296,3 @@ class FaaSCacheDict(OrderedDict):
             self.__delitem__(_keys[0])
         else:
             raise KeyError("CannotDeleteEmptyObject")
-
-
-def user_input_byte_size_to_bytes(user_bytes):
-    """
-    Convert the user input to integer bytes
-
-    User input may be bytes directly or a suffixed string amount such as '128.0M'
-    """
-    _assert(isinstance(user_bytes, (int, str)), "Invalid byte size input")
-
-    if isinstance(user_bytes, int):
-        _assert(user_bytes > 0, "Byte size must be >0")
-        return user_bytes
-
-    _assert(
-        user_bytes[-1].upper() in BYTE_SIZE_CONVERSIONS.keys(),
-        "Unknown byte size suffix",
-    )
-
-    quantity = float(user_bytes[0:-1])
-
-    _assert(quantity > 0, "Memory size must be >0")
-
-    return BYTE_SIZE_CONVERSIONS[user_bytes[-1].upper()] * quantity
