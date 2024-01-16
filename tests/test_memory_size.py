@@ -48,12 +48,12 @@ def test_get_byte_size():
 
 
 def test_byte_size_set_purge_expired():
-    faas = FaaSCacheDict(default_ttl=1, max_size_bytes="10M")
+    faas = FaaSCacheDict(default_ttl=0.5, max_size_bytes="10M")
     original_size = faas.get_byte_size()
     faas["a"] = 1
     loaded_size = faas.get_byte_size()
     assert original_size < loaded_size
-    time.sleep(1)
+    time.sleep(0.5)
     faas._purge_expired()
     assert original_size < faas.get_byte_size() < loaded_size
 
@@ -154,4 +154,3 @@ def test_change_max_size_with_expired():
     assert len(faas) == 2
 
     assert faas.keys() == ["c", "e"]
-

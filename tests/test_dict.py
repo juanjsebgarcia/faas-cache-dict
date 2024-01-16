@@ -1,3 +1,6 @@
+import pickle
+from threading import _RLock
+
 import pytest
 
 from faas_cache_dict import FaaSCacheDict
@@ -78,3 +81,15 @@ def test_iterator():
     faas["c"] = 3
     for x in faas:
         assert x in faas.keys()
+
+
+def test_reducer():
+    faas = FaaSCacheDict(default_ttl=60, max_size_bytes="1M")
+    faas["a"] = 1
+    dumped = pickle.dumps(faas, protocol=5)
+    loaded = pickle.loads(dumped)
+
+    assert type(faas._lock) == type(loaded._lock)
+
+    assert loaded.default_ttl == 60
+    assert loaded._max_size_user == "1M"

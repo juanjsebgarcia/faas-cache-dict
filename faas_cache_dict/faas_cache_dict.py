@@ -154,7 +154,17 @@ class FaaSCacheDict(OrderedDict):
         for k in vars(OrderedDict()):
             inst_dict.pop(k, None)
 
+        inst_dict.pop("_lock")
+
         return self.__class__, (), inst_dict or None, None, iter(super().items())
+
+    def __setstate__(self, new_state):
+        """
+        This allows the FaasCache object to be correctly un-pickled
+        The RLock is renewed when un-pickled
+        """
+        new_state["_lock"] = RLock()
+        self.__dict__.update(new_state)
 
     ###
     # Dict functions
