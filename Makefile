@@ -1,6 +1,9 @@
 PROD_PYPI=""  # Implicit
 TEST_PYPI="https://test.pypi.org/legacy/"
 
+lint:
+	pre-commit run --all-files
+
 test:
 	pytest -s --pdb .
 

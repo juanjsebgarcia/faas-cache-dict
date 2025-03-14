@@ -1,2 +1,2 @@
 filelock==3.13.1
-objsize==0.7.0
+objsize==0.7.1

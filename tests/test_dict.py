@@ -1,5 +1,4 @@
 import pickle
-from threading import _RLock
 
 import pytest
 
@@ -89,7 +88,7 @@ def test_reducer():
     dumped = pickle.dumps(faas, protocol=5)
     loaded = pickle.loads(dumped)
 
-    assert type(faas._lock) == type(loaded._lock)
+    assert type(faas._lock) is type(loaded._lock)
 
     assert loaded.default_ttl == 60
     assert loaded._max_size_user == "1M"
