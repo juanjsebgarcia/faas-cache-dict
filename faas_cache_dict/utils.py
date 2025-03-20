@@ -1,4 +1,4 @@
-def _assert(bool_, err_string=""):
+def _assert(bool_: bool, err_string: str = "") -> None:
     """
     Avoid using asserts in production code
     https://juangarcia.co.uk/python/python-smell-assert/

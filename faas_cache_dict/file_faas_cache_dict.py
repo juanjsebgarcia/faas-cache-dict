@@ -1,3 +1,11 @@
+"""
+A file backed implementation of a FaaSCacheDict which can resurrect its state from disk
+
+This uses the built-in Python pickling functionality and thus should support most complex data structures.
+
+This code is ALPHA; it is *NOT* recommended for production use.
+"""
+
 import os
 import pickle
 from threading import RLock
@@ -25,9 +33,9 @@ class FileBackedFaaSCache(FaaSCacheDict):
     ALPHA CODE: DO NOT USE.
 
     An implementation of a FaaSCacheDict which can resurrect its state from disk
-    if for whatever reason it is dropped from memory (eg. app restart)
+    if for whatever reason it is dropped from memory (e.g. app restart)
 
-    This uses the built in Python pickling functionality and thus such should support
+    This uses the built-in Python pickling functionality and thus such should support
     most complex data structures.
 
     Usage:

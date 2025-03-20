@@ -1,14 +1,20 @@
+from typing import Any
+
 import objsize
 
 from .constants import BYTE_SIZE_CONVERSIONS
 from .utils import _assert
 
 
-def get_deep_byte_size(obj):
+def get_deep_byte_size(obj: Any) -> int:
+    """
+    Get the deep byte size of an object, this uses `objsize` to determine an accurate byte size
+    of the object in system memory.
+    """
     return objsize.get_deep_size(obj)
 
 
-def user_input_byte_size_to_bytes(user_bytes):
+def user_input_byte_size_to_bytes(user_bytes: int | str) -> int:
     """
     Convert the user input to integer bytes
 
