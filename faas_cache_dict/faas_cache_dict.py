@@ -283,12 +283,14 @@ class FaaSCacheDict(OrderedDict):
     ###
     # TTL functions
     ###
-    def get_ttl(self, key: Any, now: float | int | None = None) -> float:
-        """Return remaining delta TTL for a key from now"""
+    def get_ttl(self, key: Any, now: float | int | None = None) -> float | None:
+        """Return remaining delta TTL for a key from now, or None if no TTL is set"""
         if now is None:
             now = time.time()
 
         expire, _value = super().__getitem__(key)
+        if expire is None:
+            return None
         return expire - now
 
     def set_ttl(self, key, ttl: float | int, now: float | int | None = None) -> None:

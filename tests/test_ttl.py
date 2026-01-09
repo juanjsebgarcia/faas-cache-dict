@@ -74,3 +74,10 @@ def test_get_ttl():
     faas.default_ttl = 10
     faas["b"] = 2
     assert 9.8 < faas.get_ttl("b") < 10
+
+
+def test_get_ttl_returns_none_when_no_default_ttl():
+    """get_ttl should return None when key has no TTL set"""
+    faas = FaaSCacheDict()  # No default_ttl
+    faas["a"] = 1
+    assert faas.get_ttl("a") is None
