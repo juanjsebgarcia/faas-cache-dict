@@ -74,6 +74,8 @@ class FaaSCacheDict(OrderedDict):
 
         # Thread to purge expired data
         self._purge_thread = Thread(target=self._purge_thread_func)
+        self._purge_thread.daemon = True
+        self._purge_thread.start()
 
     def __getitem__(self, key: Any) -> Any:
         with self._lock:
@@ -189,12 +191,14 @@ class FaaSCacheDict(OrderedDict):
     def __setstate__(self, new_state: dict) -> None:
         """
         This allows the FaasCache object to be correctly un-pickled
-        The RLock is renewed when un-pickled
+        The RLock and purge thread are renewed when un-pickled
         """
         new_state["_lock"] = RLock()
         new_state["_purge_thread"] = Thread(target=self._purge_thread_func)
+        new_state["_purge_thread"].daemon = True
+        self.__dict__.update(new_state)
         with self._lock:
-            self.__dict__.update(new_state)
+            self._purge_thread.start()
 
     def __sizeof__(self) -> int:
         with self._lock:
