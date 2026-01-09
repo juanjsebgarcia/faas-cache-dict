@@ -318,12 +318,13 @@ class FaaSCacheDict(OrderedDict):
                 return None
             return expire - now
 
-    def set_ttl(self, key, ttl: float | int, now: float | int | None = None) -> None:
-        """Set TTL for the given key, this will be set ttl seconds ahead of now"""
+    def set_ttl(self, key, ttl: float | int | None, now: float | int | None = None) -> None:
+        """Set TTL for the given key, this will be set ttl seconds ahead of now. Pass None to remove expiry."""
         if now is None:
             now = time.time()
 
-        _assert(ttl >= 0, "TTL must be in the future")
+        if ttl is not None:
+            _assert(ttl >= 0, "TTL must be non-negative")
 
         with self._lock:
             # Set new TTL and reset to bottom of queue (MRU)

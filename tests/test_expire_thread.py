@@ -79,3 +79,35 @@ def test_purge_thread_alive_after_unpickle():
 
     assert loaded._purge_thread.is_alive()
     assert loaded._purge_thread.daemon is True
+
+
+def test_pickle_preserves_values():
+    """Pickling and unpickling should preserve values correctly"""
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["a"] = 1
+    faas["b"] = "hello"
+    faas["c"] = {"nested": "dict"}
+
+    dumped = pickle.dumps(faas, protocol=5)
+    loaded = pickle.loads(dumped)
+
+    assert loaded["a"] == 1
+    assert loaded["b"] == "hello"
+    assert loaded["c"] == {"nested": "dict"}
+    assert len(loaded) == 3
+
+
+def test_pickle_preserves_ttl():
+    """Pickling and unpickling should preserve TTL expiry times"""
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["a"] = 1
+
+    original_ttl = faas.get_ttl("a")
+
+    dumped = pickle.dumps(faas, protocol=5)
+    loaded = pickle.loads(dumped)
+
+    loaded_ttl = loaded.get_ttl("a")
+
+    # TTL should be very close (within 1 second due to test execution time)
+    assert abs(original_ttl - loaded_ttl) < 1
