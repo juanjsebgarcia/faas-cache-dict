@@ -190,17 +190,28 @@ class FaaSCacheDict(OrderedDict):
             inst_dict.pop("_lock")
             inst_dict.pop("_purge_thread")
 
-            return self.__class__, (), inst_dict or None, None, iter(super().items())
+            # Store items separately to restore with original expiry times
+            inst_dict["_pickled_items"] = list(super().items())
+
+            return self.__class__, (), inst_dict or None, None, None
 
     def __setstate__(self, new_state: dict) -> None:
         """
         This allows the FaasCache object to be correctly un-pickled
         The RLock and purge thread are renewed when un-pickled
         """
+        # Extract pickled items before updating __dict__
+        pickled_items = new_state.pop("_pickled_items", [])
+
         new_state["_lock"] = RLock()
         new_state["_purge_thread"] = Thread(target=self._purge_thread_func)
         new_state["_purge_thread"].daemon = True
         self.__dict__.update(new_state)
+
+        # Restore items directly to preserve original expiry times
+        for key, value in pickled_items:
+            super().__setitem__(key, value)
+
         with self._lock:
             self._purge_thread.start()
 

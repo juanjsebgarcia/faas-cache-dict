@@ -111,3 +111,23 @@ def test_pickle_preserves_ttl():
 
     # TTL should be very close (within 1 second due to test execution time)
     assert abs(original_ttl - loaded_ttl) < 1
+
+
+def test_pickle_preserves_lru_order():
+    """Pickling and unpickling should preserve LRU order"""
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["a"] = 1
+    faas["b"] = 2
+    faas["c"] = 3
+
+    # Access "a" to make it most recently used
+    _ = faas["a"]
+
+    # Order should now be: b, c, a (oldest to newest)
+    assert faas.keys() == ["b", "c", "a"]
+
+    dumped = pickle.dumps(faas, protocol=5)
+    loaded = pickle.loads(dumped)
+
+    # LRU order should be preserved
+    assert loaded.keys() == ["b", "c", "a"]
