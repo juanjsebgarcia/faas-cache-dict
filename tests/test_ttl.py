@@ -66,6 +66,25 @@ def test_set_ttl():
         assert faas["a"] == 1
 
 
+def test_set_ttl_none_removes_expiry():
+    """Setting TTL to None should remove expiry (key never expires)"""
+    faas = FaaSCacheDict(default_ttl=0.1)
+    faas["a"] = 1
+
+    # Key would expire in 0.1 seconds
+    assert faas.get_ttl("a") is not None
+
+    # Remove expiry
+    faas.set_ttl("a", None)
+
+    # TTL should now be None
+    assert faas.get_ttl("a") is None
+
+    # Key should still exist after original TTL would have expired
+    time.sleep(0.2)
+    assert faas["a"] == 1
+
+
 def test_get_ttl():
     faas = FaaSCacheDict(default_ttl=1)
     faas["a"] = 1
@@ -81,3 +100,31 @@ def test_get_ttl_returns_none_when_no_default_ttl():
     faas = FaaSCacheDict()  # No default_ttl
     faas["a"] = 1
     assert faas.get_ttl("a") is None
+
+
+def test_default_ttl_zero_expires_immediately():
+    """default_ttl=0 should cause items to expire immediately"""
+    faas = FaaSCacheDict(default_ttl=0)
+    faas["a"] = 1
+
+    # Item either expired (True) or already purged (None)
+    assert faas.is_expired("a") in (True, None)
+
+    # Accessing should raise KeyError (expired or purged)
+    with pytest.raises(KeyError):
+        _ = faas["a"]
+
+
+def test_set_ttl_zero_expires_immediately():
+    """set_ttl(key, 0) should cause item to expire immediately"""
+    faas = FaaSCacheDict()
+    faas["a"] = 1
+
+    # No TTL initially
+    assert faas.is_expired("a") is False
+
+    # Set TTL to 0
+    faas.set_ttl("a", 0)
+
+    # Should be expired now
+    assert faas.is_expired("a") is True

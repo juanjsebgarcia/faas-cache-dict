@@ -44,7 +44,7 @@ class FaaSCacheDict(OrderedDict):
             isinstance(default_ttl, (int, float)) or (default_ttl is None),
             "Invalid TTL config",
         )
-        if default_ttl:
+        if default_ttl is not None:
             _assert(default_ttl >= 0, "TTL must be >=0")
         self.default_ttl = default_ttl
 
@@ -102,7 +102,7 @@ class FaaSCacheDict(OrderedDict):
             expire = None
             if expire_at is not None:
                 expire = expire_at
-            elif self.default_ttl:
+            elif self.default_ttl is not None:
                 expire = time.time() + self.default_ttl
 
             if self._max_items:
@@ -356,7 +356,7 @@ class FaaSCacheDict(OrderedDict):
             except KeyError:
                 return None  # unknown
 
-            if expire:
+            if expire is not None:
                 if expire < now:
                     return True
 
