@@ -306,10 +306,11 @@ class FaaSCacheDict(OrderedDict):
         if now is None:
             now = time.time()
 
-        expire, _value = super().__getitem__(key)
-        if expire is None:
-            return None
-        return expire - now
+        with self._lock:
+            expire, _value = super().__getitem__(key)
+            if expire is None:
+                return None
+            return expire - now
 
     def set_ttl(self, key, ttl: float | int, now: float | int | None = None) -> None:
         """Set TTL for the given key, this will be set ttl seconds ahead of now"""
@@ -342,16 +343,17 @@ class FaaSCacheDict(OrderedDict):
         if now is None:
             now = time.time()
 
-        try:
-            expire, _value = super().__getitem__(key)
-        except KeyError:
-            return None  # unknown
+        with self._lock:
+            try:
+                expire, _value = super().__getitem__(key)
+            except KeyError:
+                return None  # unknown
 
-        if expire:
-            if expire < now:
-                return True
+            if expire:
+                if expire < now:
+                    return True
 
-        return False
+            return False
 
     def _purge_expired(self) -> None:
         """Iterate through all cache items and prune all expired keys"""
