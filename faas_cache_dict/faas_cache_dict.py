@@ -238,13 +238,11 @@ class FaaSCacheDict(OrderedDict):
     # Dict functions
     ###
     def get(self, key: Any, default: Any = None) -> Any:
-        if self.is_expired(key):
-            return default
-
-        try:
-            return self[key]
-        except KeyError:
-            return default
+        with self._lock:
+            try:
+                return self[key]
+            except KeyError:
+                return default
 
     def keys(self) -> list[Any]:
         with self._lock:
