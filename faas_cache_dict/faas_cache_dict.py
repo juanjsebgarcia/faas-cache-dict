@@ -1,4 +1,5 @@
 import gc
+import logging
 import sys
 import time
 from collections import OrderedDict
@@ -10,6 +11,8 @@ from .size_utils import get_deep_byte_size, user_input_byte_size_to_bytes
 from .utils import _assert
 
 __all__ = ["FaaSCacheDict"]
+
+logger = logging.getLogger(__name__)
 
 
 class FaaSCacheDict(OrderedDict):
@@ -127,7 +130,7 @@ class FaaSCacheDict(OrderedDict):
                         self.on_delete_callable(key, super().__getitem__(key)[1])
                     except Exception as err:
                         # Prevent user code from breaking FaasCacheDict ops
-                        print(f"FaasCacheDict: on_delete_callable caused exc: {err}")
+                        logger.warning("on_delete_callable raised exception: %s", err, exc_info=True)
                 super().__delitem__(key)
             except KeyError as err:
                 if not ignore_missing:
@@ -267,7 +270,7 @@ class FaaSCacheDict(OrderedDict):
                 try:
                     self.on_delete_callable(key, value)
                 except Exception as err:
-                    print(f"FaasCacheDict: on_delete_callable caused exc: {err}")
+                    logger.warning("on_delete_callable raised exception: %s", err, exc_info=True)
             super().__delitem__(key)
             self._set_self_byte_size()
             return value
@@ -283,7 +286,7 @@ class FaaSCacheDict(OrderedDict):
                 try:
                     self.on_delete_callable(k, value)
                 except Exception as err:
-                    print(f"FaasCacheDict: on_delete_callable caused exc: {err}")
+                    logger.warning("on_delete_callable raised exception: %s", err, exc_info=True)
             super().__delitem__(k)
             self._set_self_byte_size()
             return k, value
