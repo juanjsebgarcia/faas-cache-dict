@@ -135,6 +135,50 @@ def test_not_equal():
     assert faas != faas2
 
 
+def test_equal_with_incompatible_type_returns_false():
+    faas = FaaSCacheDict(default_ttl=2)
+    faas["a"] = 1
+
+    assert (faas == 42) is False
+    assert (faas == "string") is False
+    assert (faas == None) is False
+    assert (faas == [1, 2, 3]) is False
+
+
+def test_not_equal_with_incompatible_type():
+    faas = FaaSCacheDict(default_ttl=2)
+    faas["a"] = 1
+
+    assert faas != 42
+    assert faas != "string"
+    assert faas != None
+    assert faas != [1, 2, 3]
+
+
+def test_getitem_keyerror_includes_key():
+    faas = FaaSCacheDict(default_ttl=2)
+    faas["a"] = 1
+
+    try:
+        _ = faas["nonexistent"]
+        assert False, "Should have raised KeyError"
+    except KeyError as e:
+        assert e.args[0] == "nonexistent"
+
+
+def test_getitem_expired_keyerror_includes_key():
+    faas = FaaSCacheDict(default_ttl=0.01)
+    faas["expiring_key"] = 1
+
+    time.sleep(0.02)
+
+    try:
+        _ = faas["expiring_key"]
+        assert False, "Should have raised KeyError"
+    except KeyError as e:
+        assert e.args[0] == "expiring_key"
+
+
 def test_clear():
     faas = FaaSCacheDict(default_ttl=2)
     faas["a"] = 1

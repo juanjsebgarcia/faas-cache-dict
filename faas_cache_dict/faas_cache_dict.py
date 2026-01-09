@@ -79,7 +79,7 @@ class FaaSCacheDict(OrderedDict):
         with self._lock:
             if self.is_expired(key):
                 self.__delitem__(key)
-                raise KeyError
+                raise KeyError(key)
             value_with_expiry = super().__getitem__(key)
             super().move_to_end(key)
             return value_with_expiry[1]
@@ -209,6 +209,8 @@ class FaaSCacheDict(OrderedDict):
     def __eq__(self, other: Any) -> bool:
         with self._lock:
             self._purge_expired()
+            if not hasattr(other, "items"):
+                return False
             return self.items() == other.items()
 
     def __ne__(self, other: Any) -> bool:
@@ -270,7 +272,7 @@ class FaaSCacheDict(OrderedDict):
         with self._lock:
             self._purge_expired()
             if not super().__len__():
-                raise KeyError("dictionary is empty")
+                raise KeyError("EmptyCache")
             k = list(super().keys())[-1 if last else 0]
             value = super().__getitem__(k)[1]
             if self.on_delete_callable:
