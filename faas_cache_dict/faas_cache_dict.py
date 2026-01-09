@@ -85,7 +85,7 @@ class FaaSCacheDict(OrderedDict):
             return value_with_expiry[1]
 
     def __setitem__(
-        self, key: Any, value: Any, override_ttl: float | int | None = None
+        self, key: Any, value: Any, expire_at: float | int | None = None
     ) -> None:
         if self._max_size_bytes:
             if (
@@ -95,8 +95,8 @@ class FaaSCacheDict(OrderedDict):
 
         with self._lock:
             expire = None
-            if override_ttl:
-                expire = override_ttl
+            if expire_at is not None:
+                expire = expire_at
             elif self.default_ttl:
                 expire = time.time() + self.default_ttl
 
