@@ -126,7 +126,6 @@ class FaaSCacheDict(OrderedDict):
                     except Exception as err:
                         # Prevent user code from breaking FaasCacheDict ops
                         print(f"FaasCacheDict: on_delete_callable caused exc: {err}")
-                        pass
                 super().__delitem__(key)
             except KeyError as err:
                 if not ignore_missing:
@@ -255,16 +254,33 @@ class FaaSCacheDict(OrderedDict):
     def pop(self, key: Any, default: Any = None) -> Any:
         with self._lock:
             self._purge_expired()
-            v = super().pop(key, default)
-            if v is not default:
-                return v[1]
-            return default
+            if key not in super().keys():
+                return default
+            value = super().__getitem__(key)[1]
+            if self.on_delete_callable:
+                try:
+                    self.on_delete_callable(key, value)
+                except Exception as err:
+                    print(f"FaasCacheDict: on_delete_callable caused exc: {err}")
+            super().__delitem__(key)
+            self._set_self_byte_size()
+            return value
 
     def popitem(self, last: bool = True) -> tuple[Any, Any]:
         with self._lock:
             self._purge_expired()
-            k, v = super().popitem(last)
-            return k, v[1]
+            if not super().__len__():
+                raise KeyError("dictionary is empty")
+            k = list(super().keys())[-1 if last else 0]
+            value = super().__getitem__(k)[1]
+            if self.on_delete_callable:
+                try:
+                    self.on_delete_callable(k, value)
+                except Exception as err:
+                    print(f"FaasCacheDict: on_delete_callable caused exc: {err}")
+            super().__delitem__(k)
+            self._set_self_byte_size()
+            return k, value
 
     def clear(self) -> None:
         return self.purge()
