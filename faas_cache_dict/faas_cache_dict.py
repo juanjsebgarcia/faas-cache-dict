@@ -2,6 +2,7 @@ import gc
 import logging
 import sys
 import time
+import weakref
 from collections import OrderedDict
 from threading import RLock, Thread
 from typing import Any, Callable, Iterable
@@ -76,7 +77,10 @@ class FaaSCacheDict(OrderedDict):
         self._set_self_byte_size(skip_purge=True)
 
         # Thread to purge expired data
-        self._purge_thread = Thread(target=self._purge_thread_func)
+        self._stop_purge = False
+        self._purge_thread = Thread(
+            target=FaaSCacheDict._purge_thread_func, args=(weakref.ref(self),)
+        )
         self._purge_thread.daemon = True
         self._purge_thread.start()
 
@@ -189,6 +193,7 @@ class FaaSCacheDict(OrderedDict):
 
             inst_dict.pop("_lock")
             inst_dict.pop("_purge_thread")
+            inst_dict.pop("_stop_purge", None)
 
             # Store items separately to restore with original expiry times
             inst_dict["_pickled_items"] = list(super().items())
@@ -204,14 +209,18 @@ class FaaSCacheDict(OrderedDict):
         pickled_items = new_state.pop("_pickled_items", [])
 
         new_state["_lock"] = RLock()
-        new_state["_purge_thread"] = Thread(target=self._purge_thread_func)
-        new_state["_purge_thread"].daemon = True
+        new_state["_stop_purge"] = False
         self.__dict__.update(new_state)
 
         # Restore items directly to preserve original expiry times
         for key, value in pickled_items:
             super().__setitem__(key, value)
 
+        # Create and start purge thread after self is fully initialized
+        self._purge_thread = Thread(
+            target=FaaSCacheDict._purge_thread_func, args=(weakref.ref(self),)
+        )
+        self._purge_thread.daemon = True
         with self._lock:
             self._purge_thread.start()
 
@@ -312,6 +321,10 @@ class FaaSCacheDict(OrderedDict):
                 for key in list(super().__iter__())
             ]
 
+    def close(self) -> None:
+        """Stop the background purge thread and release resources."""
+        self._stop_purge = True
+
     def copy(self):
         raise NotImplementedError
 
@@ -389,13 +402,34 @@ class FaaSCacheDict(OrderedDict):
     ###
     # Thread functions
     ###
-    def _purge_thread_func(self) -> None:
+    @staticmethod
+    def _purge_thread_func(weak_self) -> None:
         """
-        Thread function which will run in the background and purge expired keys
+        Thread function which will run in the background and purge expired keys.
+        Uses a weak reference to allow garbage collection of the parent object.
         """
         while True:
-            time.sleep(self._auto_purge_seconds)
-            self._purge_expired()
+            self = weak_self()
+            if self is None or self._stop_purge:
+                # Parent object was garbage collected or stop requested
+                return
+
+            # Read values before releasing reference
+            sleep_time = self._auto_purge_seconds
+            del self  # Release strong reference before sleeping
+
+            time.sleep(sleep_time)
+
+            # Re-acquire reference after sleep
+            self = weak_self()
+            if self is None or self._stop_purge:
+                return
+
+            try:
+                self._purge_expired()
+            except Exception:
+                # Parent may have been collected during purge
+                return
 
     ###
     # Memory size functions
