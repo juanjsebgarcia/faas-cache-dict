@@ -113,6 +113,8 @@ class FaaSCacheDict(OrderedDict):
                 if (
                     key not in super().keys()
                 ):  # If refreshing an existing key then size remains constant
+                    # Purge expired items first so we don't evict valid items unnecessarily
+                    self._purge_expired()
                     while self._max_items <= super().__len__():
                         self.delete_oldest_item()
 
