@@ -535,7 +535,10 @@ class FaaSCacheDict(OrderedDict):
         with self._lock:
             self._max_items = max_items
             if self._max_items:
-                while self._max_items < self.__len__():
+                # delete_oldest_item() purges each iteration, so use super().__len__()
+                # to avoid double-purging (once in __len__ and once in delete_oldest_item)
+                self._purge_expired()  # Initial purge
+                while self._max_items < super().__len__():
                     self.delete_oldest_item()
 
     def delete_oldest_item(self) -> None:
