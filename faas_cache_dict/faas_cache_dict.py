@@ -345,6 +345,25 @@ class FaaSCacheDict(OrderedDict):
     def copy(self):
         raise NotImplementedError
 
+    def setdefault(self, key: Any, default: Any = None) -> Any:
+        """
+        If key is in the cache and not expired, return its value.
+        Otherwise, set key to default and return default.
+        """
+        with self._lock:
+            try:
+                return self[key]
+            except KeyError:
+                self[key] = default
+                return default
+
+    @classmethod
+    def fromkeys(cls, iterable, value=None):
+        """Not implemented - use constructor with explicit TTL and constraints instead."""
+        raise NotImplementedError(
+            "fromkeys is not supported. Use FaaSCacheDict() constructor and add items individually."
+        )
+
     ###
     # TTL functions
     ###
