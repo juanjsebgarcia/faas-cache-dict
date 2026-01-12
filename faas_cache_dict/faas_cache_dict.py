@@ -364,6 +364,14 @@ class FaaSCacheDict(OrderedDict):
             "fromkeys is not supported. Use FaaSCacheDict() constructor and add items individually."
         )
 
+    def move_to_end(self, key: Any, last: bool = True) -> None:
+        """Move an existing key to either end of the cache. Raises KeyError if expired or missing."""
+        with self._lock:
+            if self.is_expired(key):
+                self.__delitem__(key)
+                raise KeyError(key)
+            super().move_to_end(key, last=last)
+
     ###
     # TTL functions
     ###
