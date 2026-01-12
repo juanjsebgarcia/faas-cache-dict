@@ -131,3 +131,153 @@ def test_pickle_preserves_lru_order():
 
     # LRU order should be preserved
     assert loaded.keys() == ["b", "c", "a"]
+
+
+def test_unpickle_with_empty_pickled_items():
+    """Unpickling cache with no items should work correctly."""
+    faas = FaaSCacheDict(default_ttl=60)
+    dumped = pickle.dumps(faas, protocol=5)
+    loaded = pickle.loads(dumped)
+    assert len(loaded) == 0
+
+
+def test_unpickle_mixed_ttl_and_no_ttl_items():
+    """Unpickling should preserve mixed TTL and no-TTL items."""
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["with_ttl"] = 1
+    faas.set_ttl("with_ttl", 120)
+
+    # Add item with no TTL
+    faas["no_ttl"] = 2
+    faas.set_ttl("no_ttl", None)
+
+    dumped = pickle.dumps(faas, protocol=5)
+    loaded = pickle.loads(dumped)
+
+    assert loaded.get_ttl("with_ttl") is not None
+    assert loaded.get_ttl("no_ttl") is None
+    assert loaded["no_ttl"] == 2
+
+
+def test_unpickle_items_expired_after_serialization():
+    """Items that expire after serialization but before unpickle should be expired."""
+    faas = FaaSCacheDict(default_ttl=0.1)
+    faas["short_lived"] = 1
+    dumped = pickle.dumps(faas, protocol=5)
+    time.sleep(0.2)  # Wait for TTL to expire
+    loaded = pickle.loads(dumped)
+    assert loaded.is_expired("short_lived") is True
+
+
+def test_multiple_pickle_unpickle_cycles():
+    """Multiple pickle/unpickle cycles should maintain integrity."""
+    faas = FaaSCacheDict(default_ttl=60, max_size_bytes="1M")
+    faas["a"] = 1
+    faas["b"] = 2
+
+    for _ in range(5):
+        dumped = pickle.dumps(faas, protocol=5)
+        faas = pickle.loads(dumped)
+
+    assert faas["a"] == 1
+    assert faas["b"] == 2
+    assert faas._purge_thread.is_alive()
+
+
+def test_pickle_preserves_max_size_bytes():
+    """Pickling should preserve max_size_bytes configuration."""
+    faas = FaaSCacheDict(default_ttl=60, max_size_bytes="2M")
+    faas["a"] = 1
+
+    dumped = pickle.dumps(faas, protocol=5)
+    loaded = pickle.loads(dumped)
+
+    assert loaded._max_size_user == "2M"
+
+
+def test_pickle_preserves_max_items():
+    """Pickling should preserve max_items configuration."""
+    faas = FaaSCacheDict(default_ttl=60, max_items=100)
+    faas["a"] = 1
+
+    dumped = pickle.dumps(faas, protocol=5)
+    loaded = pickle.loads(dumped)
+
+    assert loaded._max_items == 100
+
+
+def test_pickle_recalculates_byte_size():
+    """Unpickling should recalculate _self_byte_size, not use stale pickled value."""
+    faas = FaaSCacheDict(default_ttl=60, max_size_bytes="1M")
+    faas["a"] = "x" * 1000  # Add some data
+
+    original_size = faas.get_byte_size()
+    assert original_size > 0
+
+    dumped = pickle.dumps(faas, protocol=5)
+    loaded = pickle.loads(dumped)
+
+    # Byte size should be recalculated and be similar to original
+    loaded_size = loaded._self_byte_size
+    assert loaded_size > 0
+    # Should be close to original (allowing some variance for object overhead)
+    assert abs(loaded_size - original_size) < 1000
+
+
+def test_cache_can_be_garbage_collected():
+    """FaaSCacheDict should be garbage collected when no references remain."""
+    import weakref as wr
+
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["a"] = 1
+    weak_ref = wr.ref(faas)
+
+    del faas
+    gc.collect()
+
+    # Give thread time to notice and exit
+    time.sleep(0.1)
+    gc.collect()
+
+    assert weak_ref() is None, "FaaSCacheDict was not garbage collected"
+
+
+def test_close_stops_purge_thread():
+    """close() should stop the background purge thread."""
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["a"] = 1
+
+    assert faas._purge_thread.is_alive()
+
+    faas.close()
+    # Give thread time to exit (it checks on next iteration)
+    time.sleep(faas._auto_purge_seconds + 1)
+
+    assert not faas._purge_thread.is_alive()
+
+
+def test_close_is_idempotent():
+    """Calling close() multiple times should not cause errors."""
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["a"] = 1
+
+    faas.close()
+    faas.close()
+    faas.close()
+
+    assert faas._stop_purge is True
+
+
+def test_cache_still_works_after_close():
+    """Cache operations should still work after close(), just no background purge."""
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["a"] = 1
+
+    faas.close()
+
+    # Basic operations should still work
+    faas["b"] = 2
+    assert faas["a"] == 1
+    assert faas["b"] == 2
+    del faas["a"]
+    assert "a" not in faas

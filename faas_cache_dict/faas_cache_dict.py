@@ -142,7 +142,11 @@ class FaaSCacheDict(OrderedDict):
                             self.on_delete_callable(key, value)
                         except Exception as err:
                             # Prevent user code from breaking FaasCacheDict ops
-                            logger.warning("on_delete_callable raised exception: %s", err, exc_info=True)
+                            logger.warning(
+                                "on_delete_callable raised exception: %s",
+                                err,
+                                exc_info=True,
+                            )
                 super().__delitem__(key)
             except KeyError as err:
                 if not ignore_missing:
@@ -306,7 +310,9 @@ class FaaSCacheDict(OrderedDict):
                 try:
                     self.on_delete_callable(key, value)
                 except Exception as err:
-                    logger.warning("on_delete_callable raised exception: %s", err, exc_info=True)
+                    logger.warning(
+                        "on_delete_callable raised exception: %s", err, exc_info=True
+                    )
             super().__delitem__(key)
             self._set_self_byte_size()
             return value
@@ -322,7 +328,9 @@ class FaaSCacheDict(OrderedDict):
                 try:
                     self.on_delete_callable(k, value)
                 except Exception as err:
-                    logger.warning("on_delete_callable raised exception: %s", err, exc_info=True)
+                    logger.warning(
+                        "on_delete_callable raised exception: %s", err, exc_info=True
+                    )
             super().__delitem__(k)
             self._set_self_byte_size()
             return k, value
@@ -388,7 +396,9 @@ class FaaSCacheDict(OrderedDict):
                 return None
             return expire - now
 
-    def set_ttl(self, key, ttl: float | int | None, now: float | int | None = None) -> None:
+    def set_ttl(
+        self, key, ttl: float | int | None, now: float | int | None = None
+    ) -> None:
         """Set TTL for the given key, this will be set ttl seconds ahead of now. Pass None to remove expiry."""
         if now is None:
             now = time.time()
