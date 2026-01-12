@@ -245,7 +245,8 @@ class FaaSCacheDict(OrderedDict):
             self._purge_expired()
             if not hasattr(other, "items"):
                 return False
-            return self.items() == other.items()
+            self_items = [(k, v[1]) for (k, v) in super().items()]
+            return self_items == other.items()
 
     def __ne__(self, other: Any) -> bool:
         return not self.__eq__(other)
