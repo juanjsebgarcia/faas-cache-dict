@@ -5,6 +5,9 @@ lint:
 	pre-commit run --all-files
 
 test:
+	pytest .
+
+test-debug:
 	pytest -s --pdb .
 
 release-test:
