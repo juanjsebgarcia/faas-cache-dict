@@ -234,7 +234,11 @@ class FaaSCacheDict(OrderedDict):
     def __reversed__(self) -> Iterable[Any]:
         with self._lock:
             self._purge_expired()
-            return super().__reversed__()
+            keys = list(super().__reversed__())
+
+        for key in keys:
+            if self.is_expired(key) is False:
+                yield key
 
     def __eq__(self, other: Any) -> bool:
         with self._lock:
