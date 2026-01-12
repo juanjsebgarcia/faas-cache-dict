@@ -147,8 +147,11 @@ class FaaSCacheDict(OrderedDict):
         """Yield non-expired keys, without purging the expired ones"""
         with self._lock:
             self._purge_expired()
-            keys = [key for key in super().__iter__() if self.is_expired(key) is False]
-        return iter(keys)
+            keys = list(super().__iter__())
+
+        for key in keys:
+            if self.is_expired(key) is False:
+                yield key
 
     def __contains__(self, key: Any) -> bool:
         with self._lock:
