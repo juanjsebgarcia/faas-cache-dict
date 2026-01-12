@@ -129,34 +129,37 @@ class FaaSCacheDict(OrderedDict):
         ignore_missing: bool = False,
         skip_byte_size_update: bool = False,
     ) -> None:
+        callback_info = None
         with self._lock:
             try:
                 if self.on_delete_callable and is_terminal:
-                    # Get value first to avoid misleading error if key doesn't exist
+                    # Capture value for callback outside lock
                     try:
-                        value = super().__getitem__(key)[1]
+                        callback_info = (key, super().__getitem__(key)[1])
                     except KeyError:
-                        pass  # Key doesn't exist, will be handled by __delitem__ below
-                    else:
-                        try:
-                            self.on_delete_callable(key, value)
-                        except Exception as err:
-                            # Prevent user code from breaking FaasCacheDict ops
-                            logger.warning(
-                                "on_delete_callable raised exception: %s",
-                                err,
-                                exc_info=True,
-                            )
+                        pass  # Key doesn't exist, will be handled below
                 super().__delitem__(key)
             except KeyError as err:
+                callback_info = None  # Don't callback if key didn't exist
                 if not ignore_missing:
                     raise err
             finally:
                 if not skip_byte_size_update:
                     self._set_self_byte_size()
 
+        # Call callback OUTSIDE lock to prevent deadlock
+        if callback_info is not None:
+            try:
+                self.on_delete_callable(callback_info[0], callback_info[1])
+            except Exception as err:
+                logger.warning(
+                    "on_delete_callable raised exception: %s",
+                    err,
+                    exc_info=True,
+                )
+
     def __iter__(self) -> Iterable[Any]:
-        """Yield non-expired keys, without purging the expired ones"""
+        """Yield non-expired keys. Purges expired items before iterating."""
         with self._lock:
             self._purge_expired()
             keys = list(super().__iter__())
@@ -301,23 +304,29 @@ class FaaSCacheDict(OrderedDict):
             return [v[1] for v in super().values()]
 
     def pop(self, key: Any, default: Any = None) -> Any:
+        callback_info = None
         with self._lock:
             self._purge_expired()
             if key not in super().keys():
                 return default
             value = super().__getitem__(key)[1]
             if self.on_delete_callable:
-                try:
-                    self.on_delete_callable(key, value)
-                except Exception as err:
-                    logger.warning(
-                        "on_delete_callable raised exception: %s", err, exc_info=True
-                    )
+                callback_info = (key, value)
             super().__delitem__(key)
             self._set_self_byte_size()
-            return value
+
+        # Call callback OUTSIDE lock to prevent deadlock
+        if callback_info is not None:
+            try:
+                self.on_delete_callable(callback_info[0], callback_info[1])
+            except Exception as err:
+                logger.warning(
+                    "on_delete_callable raised exception: %s", err, exc_info=True
+                )
+        return value
 
     def popitem(self, last: bool = True) -> tuple[Any, Any]:
+        callback_info = None
         with self._lock:
             self._purge_expired()
             if not super().__len__():
@@ -325,15 +334,19 @@ class FaaSCacheDict(OrderedDict):
             k = list(super().keys())[-1 if last else 0]
             value = super().__getitem__(k)[1]
             if self.on_delete_callable:
-                try:
-                    self.on_delete_callable(k, value)
-                except Exception as err:
-                    logger.warning(
-                        "on_delete_callable raised exception: %s", err, exc_info=True
-                    )
+                callback_info = (k, value)
             super().__delitem__(k)
             self._set_self_byte_size()
-            return k, value
+
+        # Call callback OUTSIDE lock to prevent deadlock
+        if callback_info is not None:
+            try:
+                self.on_delete_callable(callback_info[0], callback_info[1])
+            except Exception as err:
+                logger.warning(
+                    "on_delete_callable raised exception: %s", err, exc_info=True
+                )
+        return k, value
 
     def clear(self) -> None:
         return self.purge()
