@@ -257,7 +257,7 @@ class FaaSCacheDict(OrderedDict):
             if not hasattr(other, "items"):
                 return False
             self_items = [(k, v[1]) for (k, v) in super().items()]
-            return self_items == other.items()
+            return self_items == list(other.items())
 
     def __ne__(self, other: Any) -> bool:
         return not self.__eq__(other)
