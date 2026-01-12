@@ -583,8 +583,8 @@ class FaaSCacheDict(OrderedDict):
         """
         with self._lock:
             self._purge_expired()
-            _keys = list(super().__iter__())
-            if _keys:
-                self.__delitem__(_keys[0])
-            else:
+            try:
+                oldest_key = next(iter(super().keys()))
+            except StopIteration:
                 raise KeyError("EmptyCache")
+            self.__delitem__(oldest_key)
