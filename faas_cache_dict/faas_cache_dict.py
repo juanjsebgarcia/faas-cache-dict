@@ -111,9 +111,9 @@ class FaaSCacheDict(OrderedDict):
 
             if self._max_items:
                 if (
-                    key not in self.keys()
+                    key not in super().keys()
                 ):  # If refreshing an existing key then size remains constant
-                    while self._max_items <= self.__len__():
+                    while self._max_items <= super().__len__():
                         self.delete_oldest_item()
 
             super().__setitem__(key, (expire, value))
@@ -175,7 +175,7 @@ class FaaSCacheDict(OrderedDict):
                 self._max_size_user,
                 self._max_items,
                 self._self_byte_size,
-                len(self),
+                super().__len__(),
             )
 
     def __str__(self) -> str:
@@ -244,8 +244,7 @@ class FaaSCacheDict(OrderedDict):
             return self.items() == other.items()
 
     def __ne__(self, other: Any) -> bool:
-        with self._lock:
-            return not self.__eq__(other)
+        return not self.__eq__(other)
 
     def __or__(self, other: Any) -> None:
         raise NotImplementedError
