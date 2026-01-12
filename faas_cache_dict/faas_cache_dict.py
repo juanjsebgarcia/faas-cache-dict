@@ -495,16 +495,24 @@ class FaaSCacheDict(OrderedDict):
 
             return self._self_byte_size
 
-    def change_byte_size(self, max_size_bytes: int) -> None:
+    def change_byte_size(self, max_size_bytes: int | str | None) -> None:
         """
         Set new max byte size and delete objects if required
 
-        :param max_size_bytes: (int|str) optional: Max byte size of cache (1024 or '1K')
+        :param max_size_bytes: (int|str) optional: Max byte size of cache (1024 or '1K'), `None` to disable
         """
+        _assert(
+            isinstance(max_size_bytes, (int, str)) or (max_size_bytes is None),
+            "Invalid byte size",
+        )
+        if max_size_bytes is not None:
+            # Validate by converting - will raise if invalid
+            converted = user_input_byte_size_to_bytes(max_size_bytes)
+            _assert(converted > 0, "Byte size must be >0")
         with self._lock:
             self._max_size_user = max_size_bytes
             self._max_size_bytes = None
-            if self._max_size_user:
+            if self._max_size_user is not None:
                 self._max_size_bytes = user_input_byte_size_to_bytes(
                     self._max_size_user
                 )
@@ -526,15 +534,20 @@ class FaaSCacheDict(OrderedDict):
     ###
     # LRU functions
     ###
-    def change_max_items(self, max_items: int) -> None:
+    def change_max_items(self, max_items: int | None) -> None:
         """
         Set new max item length and trim as required
 
         :param max_items: (int) optional: Max length of cache, `None` to disable max-length
         """
+        _assert(
+            isinstance(max_items, int) or (max_items is None), "Invalid max items limit"
+        )
+        if max_items is not None:
+            _assert(max_items > 0, "Max items limit must be >0")
         with self._lock:
             self._max_items = max_items
-            if self._max_items:
+            if self._max_items is not None:
                 # delete_oldest_item() purges each iteration, so use super().__len__()
                 # to avoid double-purging (once in __len__ and once in delete_oldest_item)
                 self._purge_expired()  # Initial purge
