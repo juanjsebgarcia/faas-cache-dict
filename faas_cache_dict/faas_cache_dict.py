@@ -96,13 +96,13 @@ class FaaSCacheDict(OrderedDict):
     def __setitem__(
         self, key: Any, value: Any, expire_at: float | int | None = None
     ) -> None:
-        if self._max_size_bytes:
-            if (
-                get_deep_byte_size(key) + get_deep_byte_size(value)
-            ) > self._max_size_bytes:
-                raise DataTooLarge
-
         with self._lock:
+            if self._max_size_bytes:
+                if (
+                    get_deep_byte_size(key) + get_deep_byte_size(value)
+                ) > self._max_size_bytes:
+                    raise DataTooLarge
+
             expire = None
             if expire_at is not None:
                 expire = expire_at
@@ -435,12 +435,13 @@ class FaaSCacheDict(OrderedDict):
     ###
     def get_byte_size(self, skip_purge: bool = False) -> int:
         """Get self size in bytes"""
-        if not skip_purge:
-            self._purge_expired()
-            byte_size = get_deep_byte_size(self)
-            self._self_byte_size = byte_size  # May as well!
+        with self._lock:
+            if not skip_purge:
+                self._purge_expired()
+                byte_size = get_deep_byte_size(self)
+                self._self_byte_size = byte_size  # May as well!
 
-        return self._self_byte_size
+            return self._self_byte_size
 
     def change_byte_size(self, max_size_bytes: int) -> None:
         """
