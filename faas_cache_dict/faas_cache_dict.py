@@ -397,8 +397,11 @@ class FaaSCacheDict(OrderedDict):
             _assert(ttl >= 0, "TTL must be non-negative")
 
         with self._lock:
-            # Set new TTL and reset to bottom of queue (MRU)
-            value = self.__getitem__(key)
+            if self.is_expired(key):
+                self.__delitem__(key)
+                raise KeyError(key)
+            # Get value without affecting LRU order
+            value = super().__getitem__(key)[1]
             if ttl is None:  # No expiry
                 super().__setitem__(key, (None, value))
             else:
@@ -407,7 +410,11 @@ class FaaSCacheDict(OrderedDict):
     def expire_at(self, key: Any, timestamp: float | int) -> None:
         """Set the key expire absolute timestamp (epoch seconds - ie `time.time()`)"""
         with self._lock:
-            value = self.__getitem__(key)
+            if self.is_expired(key):
+                self.__delitem__(key)
+                raise KeyError(key)
+            # Get value without affecting LRU order
+            value = super().__getitem__(key)[1]
             super().__setitem__(key, (timestamp, value))
 
     def is_expired(self, key: Any, now: float | int | None = None) -> bool | None:
