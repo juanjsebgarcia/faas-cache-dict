@@ -386,11 +386,17 @@ class FaaSCacheDict(OrderedDict):
     # TTL functions
     ###
     def get_ttl(self, key: Any, now: float | int | None = None) -> float | None:
-        """Return remaining delta TTL for a key from now, or None if no TTL is set"""
+        """Return remaining delta TTL for a key from now, or None if no TTL is set.
+
+        Raises KeyError if the key doesn't exist or has expired.
+        """
         if now is None:
             now = time.time()
 
         with self._lock:
+            if self.is_expired(key, now=now):
+                self.__delitem__(key)
+                raise KeyError(key)
             expire, _value = super().__getitem__(key)
             if expire is None:
                 return None

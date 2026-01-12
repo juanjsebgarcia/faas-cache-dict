@@ -249,13 +249,11 @@ def test_get_ttl_near_expiry():
     assert ttl < 0.06  # Should be about 0.05 or less
 
 
-def test_get_ttl_after_expiry_returns_negative():
-    """get_ttl() after expiry should return negative value."""
-    faas = FaaSCacheDict(default_ttl=0.01)
+def test_get_ttl_after_expiry_raises_keyerror():
+    """get_ttl() after expiry should raise KeyError for consistency with other methods."""
+    faas = FaaSCacheDict(default_ttl=0.05)
     faas["a"] = 1
-    time.sleep(0.02)
-    # Item still exists internally, get_ttl should return negative
-    # Note: This depends on whether purge has run
-    ttl = faas.get_ttl("a")
-    if ttl is not None:
-        assert ttl < 0
+    time.sleep(0.1)
+    # Expired keys should raise KeyError, consistent with __getitem__, set_ttl, expire_at
+    with pytest.raises(KeyError):
+        faas.get_ttl("a")
