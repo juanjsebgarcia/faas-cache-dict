@@ -256,12 +256,12 @@ class FaaSCacheDict(OrderedDict):
                 yield key
 
     def __eq__(self, other: Any) -> bool:
+        if not hasattr(other, "items"):
+            return False
         with self._lock:
             self._purge_expired()
-            if not hasattr(other, "items"):
-                return False
             self_items = [(k, v[1]) for (k, v) in super().items()]
-            return self_items == list(other.items())
+        return self_items == list(other.items())
 
     def __ne__(self, other: Any) -> bool:
         return not self.__eq__(other)
