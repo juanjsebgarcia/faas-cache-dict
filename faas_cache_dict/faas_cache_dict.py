@@ -334,9 +334,11 @@ class FaaSCacheDict(OrderedDict):
         """Delete all data in the cache, can't just call clear as it needs to call on_delete_callable"""
         with self._lock:
             [
-                self.__delitem__(key, ignore_missing=True)
+                self.__delitem__(key, ignore_missing=True, skip_byte_size_update=True)
                 for key in list(super().__iter__())
             ]
+            # Recalculate size once at the end instead of for each deletion
+            self._set_self_byte_size(skip_purge=True)
 
     def close(self) -> None:
         """Stop the background purge thread and release resources."""
