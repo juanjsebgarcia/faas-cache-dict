@@ -220,6 +220,9 @@ class FaaSCacheDict(OrderedDict):
         for key, value in pickled_items:
             super().__setitem__(key, value)
 
+        # Recalculate byte size after restoring items
+        self._set_self_byte_size(skip_purge=True)
+
         # Create and start purge thread after self is fully initialized
         self._purge_thread = Thread(
             target=FaaSCacheDict._purge_thread_func, args=(weakref.ref(self),)
