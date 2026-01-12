@@ -430,10 +430,10 @@ def test_purge_on_change_byte_size():
 
 def test_purge_on_setitem_via_shrink():
     """__setitem__ should purge expired items via _shrink_to_fit_byte_size."""
-    faas = FaaSCacheDict(default_ttl=0.01, max_size_bytes="1M")
+    faas = FaaSCacheDict(default_ttl=0.05, max_size_bytes="1M")
     faas["a"] = 1
     faas["b"] = 2
-    time.sleep(0.02)  # Let items expire
+    time.sleep(0.1)  # Let items expire
     assert _raw_len(faas) == 2
     faas["c"] = 3  # Trigger __setitem__ which calls _shrink_to_fit_byte_size
     assert _raw_len(faas) == 1  # Only "c" remains
