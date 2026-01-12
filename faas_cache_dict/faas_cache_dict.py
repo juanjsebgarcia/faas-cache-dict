@@ -432,8 +432,9 @@ class FaaSCacheDict(OrderedDict):
 
             try:
                 self._purge_expired()
-            except Exception:
+            except Exception as err:
                 # Parent may have been collected during purge
+                logger.debug("Purge thread exiting due to exception: %s", err)
                 return
 
     ###
