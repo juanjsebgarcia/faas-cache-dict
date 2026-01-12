@@ -399,6 +399,7 @@ class FaaSCacheDict(OrderedDict):
 
     def _purge_expired(self) -> None:
         """Iterate through all cache items and prune all expired keys"""
+        items_removed = False
         with self._lock:
             _keys = list(super().__iter__())
             _remove = [key for key in _keys if self.is_expired(key)]  # noqa
@@ -406,9 +407,12 @@ class FaaSCacheDict(OrderedDict):
                 self.__delitem__(key, ignore_missing=True, skip_byte_size_update=True)
                 for key in _remove
             ]
-            if _remove:
-                gc.collect()
+            items_removed = bool(_remove)
             self._set_self_byte_size(skip_purge=True)
+
+        # Run gc.collect() outside the lock to avoid blocking other operations
+        if items_removed:
+            gc.collect()
 
     ###
     # Thread functions
