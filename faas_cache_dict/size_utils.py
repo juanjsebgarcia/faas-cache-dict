@@ -35,4 +35,4 @@ def user_input_byte_size_to_bytes(user_bytes: int | str) -> int:
 
     _assert(quantity > 0, "Memory size must be >0")
 
-    return BYTE_SIZE_CONVERSIONS[user_bytes[-1].upper()] * quantity
+    return int(BYTE_SIZE_CONVERSIONS[user_bytes[-1].upper()] * quantity)
