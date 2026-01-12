@@ -132,11 +132,17 @@ class FaaSCacheDict(OrderedDict):
         with self._lock:
             try:
                 if self.on_delete_callable and is_terminal:
+                    # Get value first to avoid misleading error if key doesn't exist
                     try:
-                        self.on_delete_callable(key, super().__getitem__(key)[1])
-                    except Exception as err:
-                        # Prevent user code from breaking FaasCacheDict ops
-                        logger.warning("on_delete_callable raised exception: %s", err, exc_info=True)
+                        value = super().__getitem__(key)[1]
+                    except KeyError:
+                        pass  # Key doesn't exist, will be handled by __delitem__ below
+                    else:
+                        try:
+                            self.on_delete_callable(key, value)
+                        except Exception as err:
+                            # Prevent user code from breaking FaasCacheDict ops
+                            logger.warning("on_delete_callable raised exception: %s", err, exc_info=True)
                 super().__delitem__(key)
             except KeyError as err:
                 if not ignore_missing:
