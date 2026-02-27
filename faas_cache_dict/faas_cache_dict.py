@@ -361,9 +361,13 @@ class FaaSCacheDict(OrderedDict):
             # Recalculate size once at the end instead of for each deletion
             self._set_self_byte_size(skip_purge=True)
 
-    def close(self) -> None:
+    def stop_purge_thread(self) -> None:
         """Stop the background purge thread and release resources."""
         self._stop_purge = True
+
+    def close(self) -> None:
+        """Stop the background purge thread and release resources."""
+        self.stop_purge_thread()
 
     def copy(self):
         raise NotImplementedError

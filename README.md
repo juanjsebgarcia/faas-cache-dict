@@ -158,6 +158,7 @@ Raises `KeyError` if the key is missing or expired.
 #### `close()`
 Stop the background purge thread. Call this when you're done with the cache to
 cleanly release resources.
+The purge thread is also stopped automatically when the instance is deleted.
 
 ```
 cache.close()
@@ -216,7 +217,7 @@ The cache is fully thread-safe. All operations are protected by a reentrant lock
 
 A background daemon thread automatically purges expired items every 5 seconds. This
 thread uses a weak reference to allow the cache to be garbage collected when no longer
-in use. Call `close()` to explicitly stop the purge thread when done.
+in use. Call `stop_purge_thread()` to explicitly stop the purge thread when done.
 
 ## Known limitations
 - The memory constraint applies to the whole cache dict object not just its contents.

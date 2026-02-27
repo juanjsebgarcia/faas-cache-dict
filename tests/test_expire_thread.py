@@ -242,8 +242,42 @@ def test_cache_can_be_garbage_collected():
     assert weak_ref() is None, "FaaSCacheDict was not garbage collected"
 
 
+def test_stop_purge_thread_stops_purge_thread():
+    """stop_purge_thread() should stop the background purge thread."""
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["a"] = 1
+
+    assert faas._purge_thread.is_alive()
+
+    faas.stop_purge_thread()
+    # Give thread time to exit (it checks on next iteration)
+    time.sleep(faas._auto_purge_seconds + 1)
+
+    assert not faas._purge_thread.is_alive()
+
+
+def test_stop_purge_thread_is_idempotent():
+    """Calling stop_purge_thread() multiple times should not cause errors."""
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["a"] = 1
+
+    faas.stop_purge_thread()
+    faas.stop_purge_thread()
+    faas.stop_purge_thread()
+
+    assert faas._stop_purge is True
+
+
+def test_cache_still_works_after_stop_purge_thread():
+    """Cache operations should still work after stop_purge_thread(), just no background purge."""
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["a"] = 1
+
+    faas.stop_purge_thread()
+
+
 def test_close_stops_purge_thread():
-    """close() should stop the background purge thread."""
+    """close() should delegate to stop_purge_thread() and stop the background purge thread."""
     faas = FaaSCacheDict(default_ttl=60)
     faas["a"] = 1
 
