@@ -143,6 +143,10 @@ def test_setitem_with_all_expired_items_and_max_items():
 
     time.sleep(0.02)  # Let all items expire
 
+    # Give the new item a comfortable TTL so the assertions below do not race the
+    # expiry clock - gc.collect() during the purge can outlast a 10ms TTL.
+    faas.default_ttl = 60
+
     # This should NOT raise KeyError - expired items should be purged first
     faas["d"] = 4
 
@@ -160,8 +164,11 @@ def test_setitem_with_some_expired_items_and_max_items():
 
     time.sleep(0.02)  # Let "a" and "b" expire
 
+    # Give the surviving items a comfortable TTL so the assertions below do not
+    # race the expiry clock - gc.collect() during the purge can outlast a 10ms TTL.
+    faas.default_ttl = 60
+
     # Add non-expiring item
-    faas.set_ttl("c", None) if "c" in faas else None
     faas["c"] = 3
     faas.set_ttl("c", None)
 

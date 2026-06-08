@@ -3,15 +3,13 @@ import pickle
 import time
 from unittest.mock import Mock
 
-import objsize
-
 from faas_cache_dict import FaaSCacheDict
 
 
 def test_purge_thread_alive():
     faas = FaaSCacheDict()
     time.sleep(1)
-    assert faas._purge_thread.is_alive
+    assert faas._purge_thread.is_alive()
 
 
 def test_purge_thread_working():
@@ -19,12 +17,17 @@ def test_purge_thread_working():
     for i in range(1000):
         faas[i] = i * 10
     time.sleep(1)
-    assert faas._purge_thread.is_alive
-    prev_size = objsize.get_deep_size(faas)
+    assert faas._purge_thread.is_alive()
+    # Measure the cached data size WITHOUT a synchronous purge, so we genuinely
+    # exercise the background thread. get_byte_size excludes the purge thread and
+    # lock, so this is stable run-to-run (raw objsize would be dominated by the
+    # thread's ~135 KB reachable graph, making the ratio assertion flaky).
+    prev_size = faas.get_byte_size(skip_purge=True)
     assert prev_size > 40000
     time.sleep(faas._auto_purge_seconds + 2)
     gc.collect()
-    assert objsize.get_deep_size(faas) < prev_size / 1.25
+    # The background thread should have purged the expired items, shrinking the cache.
+    assert faas.get_byte_size(skip_purge=True) < prev_size / 1.25
 
 
 def test_purge_thread_is_daemon():
