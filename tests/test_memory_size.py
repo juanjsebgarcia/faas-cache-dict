@@ -330,3 +330,48 @@ def test_setitem_evicts_oldest_to_fit_new_item():
     assert faas.get_byte_size() <= 4 * 1024
     # ...while the oldest item was evicted (LRU), not the newest.
     assert "a" not in faas
+
+
+def test_cached_byte_size_fresh_after_purge_expired():
+    """
+    After _purge_expired removes items, the cached _self_byte_size must reflect
+    the reduced size, not a stale pre-purge value (finding #6).
+    """
+    faas = FaaSCacheDict(default_ttl=0.05)
+    faas["big"] = "x" * 200_000
+    assert faas._self_byte_size > 100_000  # cached reflects the big item
+    time.sleep(0.1)
+    faas._purge_expired()
+    assert faas._self_byte_size < 10_000  # cached now reflects the empty cache
+
+
+def test_cached_byte_size_fresh_after_clear():
+    """purge()/clear() must update the cached size, not leave it stale (finding #6)."""
+    faas = FaaSCacheDict()
+    faas["k"] = "y" * 200_000
+    assert faas._self_byte_size > 100_000
+    faas.clear()
+    assert faas._self_byte_size < 10_000
+
+
+def test_cached_byte_size_set_at_construction():
+    """__init__ must compute the cached size, not leave it at 0 (finding #6)."""
+    faas = FaaSCacheDict(None, None, None, None, {"a": 1, "b": 2})
+    assert faas._self_byte_size > 0
+
+
+def test_get_byte_size_skip_purge_does_not_remove_expired():
+    """
+    get_byte_size(skip_purge=True) recomputes WITHOUT purging expired items - the
+    recompute must not leak a purge through __sizeof__ (finding #6).
+    """
+    faas = FaaSCacheDict(default_ttl=0.02)
+    faas.stop_purge_thread()  # isolate from the background purge thread
+    faas["a"] = 1
+    time.sleep(0.05)
+    raw_before = len(list(super(FaaSCacheDict, faas).__iter__()))
+    size = faas.get_byte_size(skip_purge=True)
+    raw_after = len(list(super(FaaSCacheDict, faas).__iter__()))
+    assert raw_before == 1
+    assert raw_after == 1  # the expired item was NOT purged
+    assert size > 0

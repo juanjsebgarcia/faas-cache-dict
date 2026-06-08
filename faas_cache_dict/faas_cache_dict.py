@@ -63,6 +63,10 @@ class FaaSCacheDict(OrderedDict):
         if self._max_size_user:
             self._max_size_bytes = user_input_byte_size_to_bytes(self._max_size_user)
         self._self_byte_size = 0
+        # Guards against __sizeof__ re-purging while we deep-measure the cache:
+        # objsize calls sys.getsizeof(self) -> __sizeof__, which would otherwise
+        # recurse back into _purge_expired during a size computation.
+        self._suppress_sizeof_purge = False
 
         # CACHE LENGTH
         _assert(
@@ -257,7 +261,8 @@ class FaaSCacheDict(OrderedDict):
 
     def __sizeof__(self) -> int:
         with self._lock:
-            self._purge_expired()
+            if not self._suppress_sizeof_purge:
+                self._purge_expired()
             return super().__sizeof__()
 
     def __reversed__(self) -> Iterable[Any]:
@@ -496,7 +501,10 @@ class FaaSCacheDict(OrderedDict):
                 for key in _remove
             ]
             items_removed = bool(_remove)
-            self._set_self_byte_size(skip_purge=True)
+            # Only recompute the cached size when something was actually removed;
+            # other mutators keep it current, so an empty purge changes nothing.
+            if items_removed:
+                self._set_self_byte_size(skip_purge=True)
 
         # Run gc.collect() outside the lock to avoid blocking other operations
         if items_removed:
@@ -539,13 +547,24 @@ class FaaSCacheDict(OrderedDict):
     # Memory size functions
     ###
     def get_byte_size(self, skip_purge: bool = False) -> int:
-        """Get self size in bytes"""
+        """
+        Get self size in bytes.
+
+        Always recomputes and caches the deep byte size. ``skip_purge=True`` only
+        skips the expiry purge beforehand (used from within a purge to avoid
+        re-entrancy); it is not a shortcut that returns a stale cached value.
+        """
         with self._lock:
             if not skip_purge:
                 self._purge_expired()
-                byte_size = get_deep_byte_size(self)
-                self._self_byte_size = byte_size  # May as well!
-
+            # Suppress __sizeof__'s own purge while objsize traverses us, so the
+            # measurement neither re-purges (skip_purge=False) nor purges at all
+            # (skip_purge=True).
+            self._suppress_sizeof_purge = True
+            try:
+                self._self_byte_size = get_deep_byte_size(self)
+            finally:
+                self._suppress_sizeof_purge = False
             return self._self_byte_size
 
     def change_byte_size(self, max_size_bytes: int | str | None) -> None:
