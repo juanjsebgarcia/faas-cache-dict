@@ -465,6 +465,35 @@ def test_init_max_items_negative_raises():
         FaaSCacheDict(max_items=-1)
 
 
+def test_init_bool_ttl_raises():
+    """bool default_ttl should raise (bool subclasses int but is not a valid TTL)."""
+    with pytest.raises(ValueError, match="Invalid TTL config"):
+        FaaSCacheDict(default_ttl=True)
+    with pytest.raises(ValueError, match="Invalid TTL config"):
+        FaaSCacheDict(default_ttl=False)
+
+
+def test_init_bool_max_items_raises():
+    """bool max_items should raise."""
+    with pytest.raises(ValueError, match="Invalid max items limit"):
+        FaaSCacheDict(max_items=True)
+
+
+def test_init_bool_max_size_bytes_raises():
+    """bool max_size_bytes should raise."""
+    with pytest.raises(ValueError, match="Invalid byte size"):
+        FaaSCacheDict(max_size_bytes=True)
+
+
+def test_bool_values_still_allowed():
+    """bool is rejected only for config - bool cache values remain valid."""
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["flag"] = True
+    faas["off"] = False
+    assert faas["flag"] is True
+    assert faas["off"] is False
+
+
 def test_init_with_dict_args():
     """Constructor should accept dict as positional argument."""
     faas = FaaSCacheDict(None, None, None, None, {"a": 1, "b": 2})

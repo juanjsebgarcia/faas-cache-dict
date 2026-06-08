@@ -324,3 +324,19 @@ def test_invalid_expiry_does_not_poison_cache_or_kill_thread():
     assert "a" in faas
     assert faas.keys() == ["a"]
     assert faas._purge_thread.is_alive()
+
+
+def test_set_ttl_bool_raises():
+    """bool TTL should raise (bool subclasses int but is not a valid TTL)."""
+    faas = FaaSCacheDict()
+    faas["a"] = 1
+    with pytest.raises(ValueError, match="Invalid TTL"):
+        faas.set_ttl("a", True)
+
+
+def test_expire_at_bool_raises():
+    """bool timestamp should raise."""
+    faas = FaaSCacheDict()
+    faas["a"] = 1
+    with pytest.raises(ValueError, match="Invalid expiry timestamp"):
+        faas.expire_at("a", True)

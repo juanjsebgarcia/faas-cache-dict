@@ -127,3 +127,11 @@ def test_bytes_rounding_to_zero_raises_value_error():
     """A quantity that rounds down to zero bytes ('0.0001K') should raise ValueError."""
     with pytest.raises(ValueError):
         user_input_byte_size_to_bytes("0.0001K")
+
+
+def test_bytes_bool_raises_value_error():
+    """bool should be rejected (bool subclasses int but is not a valid byte size)."""
+    with pytest.raises(ValueError):
+        user_input_byte_size_to_bytes(True)
+    with pytest.raises(ValueError):
+        user_input_byte_size_to_bytes(False)

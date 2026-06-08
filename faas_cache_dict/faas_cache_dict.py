@@ -9,7 +9,7 @@ from typing import Any, Callable, Iterable
 
 from .exceptions import DataTooLarge
 from .size_utils import get_deep_byte_size, user_input_byte_size_to_bytes
-from .utils import _assert
+from .utils import _assert, _is_int, _is_number
 
 __all__ = ["FaaSCacheDict"]
 
@@ -46,7 +46,7 @@ class FaaSCacheDict(OrderedDict):
         """
         # CACHE TTL
         _assert(
-            isinstance(default_ttl, (int, float)) or (default_ttl is None),
+            _is_number(default_ttl) or (default_ttl is None),
             "Invalid TTL config",
         )
         if default_ttl is not None:
@@ -55,7 +55,9 @@ class FaaSCacheDict(OrderedDict):
 
         # CACHE MEMORY SIZE
         _assert(
-            isinstance(max_size_bytes, (int, str)) or (max_size_bytes is None),
+            isinstance(max_size_bytes, str)
+            or _is_int(max_size_bytes)
+            or (max_size_bytes is None),
             "Invalid byte size",
         )
         self._max_size_user = max_size_bytes
@@ -72,7 +74,7 @@ class FaaSCacheDict(OrderedDict):
 
         # CACHE LENGTH
         _assert(
-            isinstance(max_items, int) or (max_items is None), "Invalid max items limit"
+            _is_int(max_items) or (max_items is None), "Invalid max items limit"
         )
         if max_items is not None:
             _assert(max_items > 0, "Max items limit must >0")
@@ -110,7 +112,7 @@ class FaaSCacheDict(OrderedDict):
             expire = None
             if expire_at is not None:
                 _assert(
-                    isinstance(expire_at, (int, float)),
+                    _is_number(expire_at),
                     "Invalid expiry timestamp",
                 )
                 expire = expire_at
@@ -452,7 +454,7 @@ class FaaSCacheDict(OrderedDict):
         if now is None:
             now = time.time()
 
-        _assert(ttl is None or isinstance(ttl, (int, float)), "Invalid TTL")
+        _assert(ttl is None or _is_number(ttl), "Invalid TTL")
         if ttl is not None:
             _assert(ttl >= 0, "TTL must be non-negative")
 
@@ -469,7 +471,7 @@ class FaaSCacheDict(OrderedDict):
 
     def expire_at(self, key: Any, timestamp: float | int) -> None:
         """Set the key expire absolute timestamp (epoch seconds - ie `time.time()`)"""
-        _assert(isinstance(timestamp, (int, float)), "Invalid expiry timestamp")
+        _assert(_is_number(timestamp), "Invalid expiry timestamp")
         with self._lock:
             if self.is_expired(key):
                 self.__delitem__(key)
@@ -584,7 +586,9 @@ class FaaSCacheDict(OrderedDict):
         :param max_size_bytes: (int|str) optional: Max byte size of cache (1024 or '1K'), `None` to disable
         """
         _assert(
-            isinstance(max_size_bytes, (int, str)) or (max_size_bytes is None),
+            isinstance(max_size_bytes, str)
+            or _is_int(max_size_bytes)
+            or (max_size_bytes is None),
             "Invalid byte size",
         )
         if max_size_bytes is not None:
@@ -644,7 +648,7 @@ class FaaSCacheDict(OrderedDict):
         :param max_items: (int) optional: Max length of cache, `None` to disable max-length
         """
         _assert(
-            isinstance(max_items, int) or (max_items is None), "Invalid max items limit"
+            _is_int(max_items) or (max_items is None), "Invalid max items limit"
         )
         if max_items is not None:
             _assert(max_items > 0, "Max items limit must be >0")

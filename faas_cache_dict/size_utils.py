@@ -5,7 +5,7 @@ from typing import Any
 import objsize
 
 from .constants import BYTE_SIZE_CONVERSIONS
-from .utils import _assert
+from .utils import _assert, _is_int
 
 # objsize traverses an object's entire reference graph. For a FaaSCacheDict that
 # graph reaches the background purge Thread and the RLock, whose reachable
@@ -46,9 +46,12 @@ def user_input_byte_size_to_bytes(user_bytes: int | str) -> int:
 
     User input may be bytes directly or a suffixed string amount such as '128.0M'
     """
-    _assert(isinstance(user_bytes, (int, str)), "Invalid byte size input")
+    _assert(
+        isinstance(user_bytes, str) or _is_int(user_bytes),
+        "Invalid byte size input",
+    )
 
-    if isinstance(user_bytes, int):
+    if _is_int(user_bytes):
         _assert(user_bytes > 0, "Byte size must be >0")
         return user_bytes
 
