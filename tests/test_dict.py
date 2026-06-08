@@ -1,5 +1,6 @@
 import pickle
 import time
+from collections import OrderedDict
 
 import pytest
 
@@ -185,6 +186,26 @@ def test_equal_with_empty_dict():
 
     assert faas == {}
     assert {} == faas
+
+
+def test_equal_with_reordered_dict_is_order_insensitive():
+    """Comparison against a plain dict is order-insensitive, like OrderedDict == dict."""
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["a"] = 1
+    faas["b"] = 2
+
+    assert faas == {"b": 2, "a": 1}
+    assert {"b": 2, "a": 1} == faas
+
+
+def test_equal_with_reordered_ordereddict_is_order_sensitive():
+    """Comparison against another OrderedDict stays order-sensitive, like OrderedDict == OrderedDict."""
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["a"] = 1
+    faas["b"] = 2
+
+    assert faas == OrderedDict([("a", 1), ("b", 2)])
+    assert faas != OrderedDict([("b", 2), ("a", 1)])
 
 
 def test_getitem_keyerror_includes_key():
@@ -400,6 +421,24 @@ def test_init_invalid_max_size_bytes_dict_raises():
     """Dict max_size_bytes should raise ValueError."""
     with pytest.raises(ValueError, match="Invalid byte size"):
         FaaSCacheDict(max_size_bytes={"size": 1024})
+
+
+def test_init_max_size_bytes_zero_raises():
+    """max_size_bytes=0 should raise, consistent with change_byte_size (not silently ignored)."""
+    with pytest.raises(ValueError):
+        FaaSCacheDict(max_size_bytes=0)
+
+
+def test_init_max_size_bytes_empty_string_raises():
+    """max_size_bytes='' should raise, not be silently ignored."""
+    with pytest.raises(ValueError):
+        FaaSCacheDict(max_size_bytes="")
+
+
+def test_init_max_size_bytes_rounding_to_zero_raises():
+    """max_size_bytes='0.0001K' rounds to 0 bytes and must raise, not silently disable the limit."""
+    with pytest.raises(ValueError):
+        FaaSCacheDict(max_size_bytes="0.0001K")
 
 
 def test_init_invalid_max_items_float_raises():

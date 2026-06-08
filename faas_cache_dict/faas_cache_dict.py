@@ -60,7 +60,9 @@ class FaaSCacheDict(OrderedDict):
         )
         self._max_size_user = max_size_bytes
         self._max_size_bytes = None
-        if self._max_size_user:
+        if self._max_size_user is not None:
+            # Validate like change_byte_size: only None disables the limit; any
+            # other value must convert to a positive byte count or raise.
             self._max_size_bytes = user_input_byte_size_to_bytes(self._max_size_user)
         self._self_byte_size = 0
         # Guards against __sizeof__ re-purging while we deep-measure the cache:
@@ -280,7 +282,11 @@ class FaaSCacheDict(OrderedDict):
         with self._lock:
             self._purge_expired()
             self_items = [(k, v[1]) for (k, v) in super().items()]
-        return self_items == list(other.items())
+        # Mirror OrderedDict: order-sensitive against another OrderedDict,
+        # order-insensitive (plain mapping equality) against everything else.
+        if isinstance(other, OrderedDict):
+            return self_items == list(other.items())
+        return dict(self_items) == dict(other.items())
 
     def __ne__(self, other: Any) -> bool:
         return not self.__eq__(other)

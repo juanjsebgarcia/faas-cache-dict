@@ -101,3 +101,29 @@ def test_bytes_returns_int_not_float():
 
     result = user_input_byte_size_to_bytes(1024)
     assert isinstance(result, int), f"Expected int, got {type(result)}"
+
+
+def test_bytes_empty_string_raises_value_error():
+    """An empty string should raise ValueError, not IndexError."""
+    with pytest.raises(ValueError):
+        user_input_byte_size_to_bytes("")
+
+
+def test_bytes_suffix_only_raises_value_error():
+    """A suffix with no quantity ('K') should raise ValueError."""
+    with pytest.raises(ValueError):
+        user_input_byte_size_to_bytes("K")
+
+
+def test_bytes_non_finite_raises_value_error():
+    """Non-finite quantities (inf/nan) should raise ValueError, not OverflowError."""
+    with pytest.raises(ValueError):
+        user_input_byte_size_to_bytes("infM")
+    with pytest.raises(ValueError):
+        user_input_byte_size_to_bytes("nanK")
+
+
+def test_bytes_rounding_to_zero_raises_value_error():
+    """A quantity that rounds down to zero bytes ('0.0001K') should raise ValueError."""
+    with pytest.raises(ValueError):
+        user_input_byte_size_to_bytes("0.0001K")

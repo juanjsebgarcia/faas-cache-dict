@@ -1,3 +1,4 @@
+import math
 import threading
 from typing import Any
 
@@ -51,13 +52,22 @@ def user_input_byte_size_to_bytes(user_bytes: int | str) -> int:
         _assert(user_bytes > 0, "Byte size must be >0")
         return user_bytes
 
+    # A valid suffixed string needs at least one quantity character plus a suffix.
+    _assert(len(user_bytes) >= 2, "Invalid byte size")
     _assert(
         user_bytes[-1].upper() in BYTE_SIZE_CONVERSIONS.keys(),
         "Unknown byte size suffix",
     )
 
-    quantity = float(user_bytes[0:-1])
+    try:
+        quantity = float(user_bytes[0:-1])
+    except ValueError:
+        raise ValueError("Invalid byte size") from None
 
+    _assert(math.isfinite(quantity), "Byte size must be finite")
     _assert(quantity > 0, "Memory size must be >0")
 
-    return int(BYTE_SIZE_CONVERSIONS[user_bytes[-1].upper()] * quantity)
+    result = int(BYTE_SIZE_CONVERSIONS[user_bytes[-1].upper()] * quantity)
+    # Quantities small enough to round down to zero bytes are not a usable limit.
+    _assert(result > 0, "Byte size must be >0")
+    return result
