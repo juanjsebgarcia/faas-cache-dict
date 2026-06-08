@@ -1,5 +1,6 @@
 # faas-cache-dict
 
+[![CI](https://github.com/juanjsebgarcia/faas-cache-dict/actions/workflows/ci.yml/badge.svg)](https://github.com/juanjsebgarcia/faas-cache-dict/actions/workflows/ci.yml)
 [![PyPI version](https://img.shields.io/pypi/v/faas-cache-dict.svg)](https://pypi.org/project/faas-cache-dict/)
 [![Python versions](https://img.shields.io/pypi/pyversions/faas-cache-dict.svg)](https://pypi.org/project/faas-cache-dict/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
