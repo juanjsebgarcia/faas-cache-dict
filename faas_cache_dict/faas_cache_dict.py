@@ -281,8 +281,13 @@ class FaaSCacheDict(OrderedDict):
 
     def __setstate__(self, new_state: dict) -> None:
         """
-        This allows the FaasCache object to be correctly un-pickled
-        The RLock and purge thread are renewed when un-pickled
+        This allows the FaasCache object to be correctly un-pickled.
+
+        A fresh RLock is installed. The purge thread is intentionally NOT started
+        here: the unpickler reconstructs the object via __class__() (see
+        __reduce__), so __init__ has already started exactly one purge thread for
+        it. Starting another would orphan the first (it would keep running until
+        the object is collected) - the bug this avoids.
         """
         # Extract pickled items before updating __dict__
         pickled_items = new_state.pop("_pickled_items", [])
@@ -299,14 +304,6 @@ class FaaSCacheDict(OrderedDict):
 
         # Recalculate byte size after restoring items
         self._set_self_byte_size(skip_purge=True)
-
-        # Create and start purge thread after self is fully initialized
-        self._purge_thread = Thread(
-            target=FaaSCacheDict._purge_thread_func, args=(weakref.ref(self),)
-        )
-        self._purge_thread.daemon = True
-        with self._locked():
-            self._purge_thread.start()
 
     def __sizeof__(self) -> int:
         with self._locked():

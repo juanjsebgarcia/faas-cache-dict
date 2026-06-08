@@ -1,9 +1,29 @@
 import gc
 import pickle
+import threading
 import time
 from unittest.mock import Mock
 
 from faas_cache_dict import FaaSCacheDict
+
+
+class _FastPurge(FaaSCacheDict):
+    """Module-level (picklable) subclass with a fast background purge cadence."""
+
+    _auto_purge_seconds = 0.3
+
+
+def _purge_thread_count():
+    """Number of live background purge threads across the process."""
+    return sum(
+        1
+        for t in threading.enumerate()
+        if getattr(t, "_target", None) is FaaSCacheDict._purge_thread_func
+    )
+
+
+def _raw_len(faas):
+    return len(list(super(FaaSCacheDict, faas).__iter__()))
 
 
 def test_purge_thread_alive():
@@ -318,3 +338,49 @@ def test_cache_still_works_after_close():
     assert faas["b"] == 2
     del faas["a"]
     assert "a" not in faas
+
+
+def test_unpickle_does_not_leak_a_second_purge_thread():
+    """
+    Unpickling must add exactly one purge thread, not two.
+
+    Regression: the unpickler reconstructs via __class__() (so __init__ starts a
+    thread) and __setstate__ also started one, orphaning the first.
+    """
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["a"] = 1
+    before = _purge_thread_count()
+    loaded = pickle.loads(pickle.dumps(faas, protocol=5))
+    after = _purge_thread_count()
+    assert after - before == 1
+    assert loaded._purge_thread.is_alive()
+    faas.close()
+    loaded.close()
+
+
+def test_copy_copy_does_not_leak_a_second_purge_thread():
+    """copy.copy() uses the same reduce path and must also add only one thread."""
+    import copy
+
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["a"] = 1
+    before = _purge_thread_count()
+    clone = copy.copy(faas)
+    after = _purge_thread_count()
+    assert after - before == 1
+    assert clone._purge_thread.is_alive()
+    faas.close()
+    clone.close()
+
+
+def test_unpickled_cache_purge_thread_still_purges():
+    """The single thread on an unpickled cache must actually purge expired items."""
+    faas = _FastPurge(default_ttl=0.2)
+    faas["a"] = 1
+    loaded = pickle.loads(pickle.dumps(faas, protocol=5))
+    assert _raw_len(loaded) == 1  # restored into raw storage
+    time.sleep(loaded._auto_purge_seconds + 0.5)  # TTL + a background cycle
+    gc.collect()
+    assert _raw_len(loaded) == 0  # purged by the unpickled object's own thread
+    faas.close()
+    loaded.close()
