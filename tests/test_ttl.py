@@ -257,3 +257,70 @@ def test_get_ttl_after_expiry_raises_keyerror():
     # Expired keys should raise KeyError, consistent with __getitem__, set_ttl, expire_at
     with pytest.raises(KeyError):
         faas.get_ttl("a")
+
+
+def test_expire_at_non_numeric_raises():
+    """expire_at() with a non-numeric timestamp should raise ValueError, not corrupt the cache."""
+    faas = FaaSCacheDict()
+    faas["a"] = 1
+    with pytest.raises(ValueError, match="Invalid expiry timestamp"):
+        faas.expire_at("a", "tomorrow")
+    # The bad value was rejected, not stored - the cache stays usable
+    assert len(faas) == 1
+    assert "a" in faas
+    assert faas["a"] == 1
+
+
+def test_expire_at_none_raises():
+    """expire_at() requires a numeric timestamp; None should raise ValueError."""
+    faas = FaaSCacheDict()
+    faas["a"] = 1
+    with pytest.raises(ValueError, match="Invalid expiry timestamp"):
+        faas.expire_at("a", None)
+
+
+def test_set_ttl_non_numeric_string_raises():
+    """set_ttl() with a string TTL should raise ValueError, not a bare TypeError."""
+    faas = FaaSCacheDict()
+    faas["a"] = 1
+    with pytest.raises(ValueError, match="Invalid TTL"):
+        faas.set_ttl("a", "10")
+    assert len(faas) == 1
+    assert faas["a"] == 1
+
+
+def test_set_ttl_non_numeric_collection_raises():
+    """set_ttl() with a non-numeric TTL type should raise ValueError."""
+    faas = FaaSCacheDict()
+    faas["a"] = 1
+    with pytest.raises(ValueError, match="Invalid TTL"):
+        faas.set_ttl("a", [10])
+
+
+def test_setitem_expire_at_param_non_numeric_raises():
+    """The internal __setitem__ expire_at parameter should also reject non-numeric values."""
+    faas = FaaSCacheDict()
+    with pytest.raises(ValueError, match="Invalid expiry timestamp"):
+        faas.__setitem__("a", 1, expire_at="soon")
+
+
+def test_invalid_expiry_does_not_poison_cache_or_kill_thread():
+    """
+    A rejected bad expiry must leave the cache and its purge thread healthy.
+
+    Regression: expire_at/set_ttl previously stored non-numeric values, after
+    which is_expired's `expire < now` comparison raised TypeError from len(),
+    `in` and keys(), and silently killed the background purge thread.
+    """
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["a"] = 1
+    for bad in ("tomorrow", [1], {"t": 1}):
+        with pytest.raises(ValueError):
+            faas.expire_at("a", bad)
+        with pytest.raises(ValueError):
+            faas.set_ttl("a", bad)
+    # Expiry comparisons must still work - nothing poisoned the stored expiry
+    assert len(faas) == 1
+    assert "a" in faas
+    assert faas.keys() == ["a"]
+    assert faas._purge_thread.is_alive()

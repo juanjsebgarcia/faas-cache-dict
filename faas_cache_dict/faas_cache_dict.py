@@ -105,6 +105,10 @@ class FaaSCacheDict(OrderedDict):
 
             expire = None
             if expire_at is not None:
+                _assert(
+                    isinstance(expire_at, (int, float)),
+                    "Invalid expiry timestamp",
+                )
                 expire = expire_at
             elif self.default_ttl is not None:
                 expire = time.time() + self.default_ttl
@@ -426,6 +430,7 @@ class FaaSCacheDict(OrderedDict):
         if now is None:
             now = time.time()
 
+        _assert(ttl is None or isinstance(ttl, (int, float)), "Invalid TTL")
         if ttl is not None:
             _assert(ttl >= 0, "TTL must be non-negative")
 
@@ -442,6 +447,7 @@ class FaaSCacheDict(OrderedDict):
 
     def expire_at(self, key: Any, timestamp: float | int) -> None:
         """Set the key expire absolute timestamp (epoch seconds - ie `time.time()`)"""
+        _assert(isinstance(timestamp, (int, float)), "Invalid expiry timestamp")
         with self._lock:
             if self.is_expired(key):
                 self.__delitem__(key)
