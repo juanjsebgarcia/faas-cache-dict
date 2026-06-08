@@ -15,6 +15,10 @@ __all__ = ["FaaSCacheDict"]
 
 logger = logging.getLogger(__name__)
 
+# Sentinel marking "no key is protected from eviction" - distinct from any real
+# key, including None.
+_UNSET = object()
+
 
 class FaaSCacheDict(OrderedDict):
     """
@@ -97,12 +101,6 @@ class FaaSCacheDict(OrderedDict):
         self, key: Any, value: Any, expire_at: float | int | None = None
     ) -> None:
         with self._lock:
-            if self._max_size_bytes:
-                if (
-                    get_deep_byte_size(key) + get_deep_byte_size(value)
-                ) > self._max_size_bytes:
-                    raise DataTooLarge
-
             expire = None
             if expire_at is not None:
                 _assert(
@@ -112,6 +110,15 @@ class FaaSCacheDict(OrderedDict):
                 expire = expire_at
             elif self.default_ttl is not None:
                 expire = time.time() + self.default_ttl
+
+            if self._max_size_bytes:
+                # Cheap up-front reject for obviously oversized values, so we
+                # don't evict existing items to make room for something that can
+                # never fit. The byte-size enforcement below is authoritative.
+                if (
+                    get_deep_byte_size(key) + get_deep_byte_size((expire, value))
+                ) > self._max_size_bytes:
+                    raise DataTooLarge
 
             if self._max_items:
                 if (
@@ -124,7 +131,7 @@ class FaaSCacheDict(OrderedDict):
 
             super().__setitem__(key, (expire, value))
             super().move_to_end(key)
-            self._shrink_to_fit_byte_size()
+            self._shrink_to_fit_byte_size(protected_key=key)
 
     def __delitem__(
         self,
@@ -568,8 +575,15 @@ class FaaSCacheDict(OrderedDict):
         """Calculate and set the new internal cache size"""
         self._self_byte_size = self.get_byte_size(skip_purge)
 
-    def _shrink_to_fit_byte_size(self) -> None:
-        """As required delete the oldest LRU items in the cache dict until size criteria is met"""
+    def _shrink_to_fit_byte_size(self, protected_key: Any = _UNSET) -> None:
+        """
+        As required delete the oldest LRU items in the cache dict until size criteria is met.
+
+        When called after inserting ``protected_key``, that key is never silently
+        evicted to make itself fit: if it cannot fit even on its own (once cache
+        overhead is accounted for), it is removed and ``DataTooLarge`` is raised
+        rather than discarding it without warning.
+        """
         with self._lock:
             self._purge_expired()
             if self._max_size_bytes:
@@ -578,6 +592,16 @@ class FaaSCacheDict(OrderedDict):
                 # guard delete_oldest_item() would raise KeyError('EmptyCache')
                 # out of __setitem__ / change_byte_size for very small limits.
                 while self.get_byte_size() > self._max_size_bytes and super().__len__():
+                    oldest_key = next(iter(super().__iter__()))
+                    if oldest_key == protected_key:
+                        # Everything older has been evicted and only the
+                        # just-inserted item remains, yet we are still over
+                        # budget: it does not fit. Remove it (without firing the
+                        # delete hook, as it was never really cached) and signal
+                        # failure instead of silently dropping it.
+                        super().__delitem__(protected_key)
+                        self._set_self_byte_size()
+                        raise DataTooLarge
                     self.delete_oldest_item()
             self._set_self_byte_size()
 

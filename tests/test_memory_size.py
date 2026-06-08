@@ -5,6 +5,7 @@ import pytest
 
 from faas_cache_dict.constants import BYTES_PER_MEBIBYTE
 from faas_cache_dict.faas_cache_dict import DataTooLarge, FaaSCacheDict
+from faas_cache_dict.size_utils import get_deep_byte_size
 
 one_mb_text = open("tests/1_mebibyte.txt").read()
 
@@ -276,3 +277,56 @@ def test_nested_cache_size_excludes_nested_thread():
     outer["nested"] = FaaSCacheDict()
     delta = outer.get_byte_size() - base
     assert delta < 10_000
+
+
+def test_setitem_oversized_with_overhead_raises_not_silent():
+    """
+    An item that fits by raw key+value size but not once cache overhead is
+    counted must raise DataTooLarge - it must not be silently dropped (finding #2).
+
+    This exercises the authoritative enforcement path: the cheap precheck passes
+    (the item is smaller than the limit), but the item cannot fit once cache
+    overhead is included, so _shrink_to_fit_byte_size must reject it.
+    """
+    probe = FaaSCacheDict()
+    overhead = probe.get_byte_size()
+
+    value = "x" * 600
+    item_cost = get_deep_byte_size("a") + get_deep_byte_size((None, value))
+    # A budget the raw item fits within, but not alongside the cache overhead.
+    max_bytes = item_cost + overhead // 2
+    assert item_cost <= max_bytes  # would pass the cheap precheck
+
+    faas = FaaSCacheDict(max_size_bytes=max_bytes)
+    with pytest.raises(DataTooLarge):
+        faas["a"] = value
+    # The item must not be silently present either
+    assert "a" not in faas
+    assert len(faas) == 0
+
+
+def test_setitem_obviously_oversized_preserves_existing_items():
+    """
+    A value larger than the whole budget raises DataTooLarge without evicting
+    existing items to make room for something that can never fit (no collateral).
+    """
+    faas = FaaSCacheDict(max_size_bytes="4K")
+    faas["keep"] = "small"
+    with pytest.raises(DataTooLarge):
+        faas["huge"] = "y" * 10_000
+    assert faas["keep"] == "small"
+    assert "huge" not in faas
+
+
+def test_setitem_evicts_oldest_to_fit_new_item():
+    """A new item that fits is kept; the oldest items are evicted to make room."""
+    faas = FaaSCacheDict(max_size_bytes="4K")
+    for key in ("a", "b", "c", "d", "e", "f"):
+        # Distinct runtime strings (a variable multiplicand is not constant-folded,
+        # so objsize counts each value separately).
+        faas[key] = key * 800
+    # The newest item is retained and the cache stays within budget...
+    assert "f" in faas
+    assert faas.get_byte_size() <= 4 * 1024
+    # ...while the oldest item was evicted (LRU), not the newest.
+    assert "a" not in faas
