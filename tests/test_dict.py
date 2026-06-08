@@ -1,3 +1,4 @@
+import copy
 import pickle
 import time
 from collections import OrderedDict
@@ -272,6 +273,30 @@ def test_copy():
     with pytest.raises(NotImplementedError):
         faas = FaaSCacheDict(default_ttl=2)
         faas.copy()
+
+
+def test_copy_copy_raises():
+    """copy.copy() must raise too, consistent with .copy() (copying unsupported)."""
+    faas = FaaSCacheDict(default_ttl=2)
+    faas["a"] = 1
+    with pytest.raises(NotImplementedError):
+        copy.copy(faas)
+
+
+def test_copy_deepcopy_raises():
+    """copy.deepcopy() must raise too, consistent with .copy()."""
+    faas = FaaSCacheDict(default_ttl=2)
+    faas["a"] = 1
+    with pytest.raises(NotImplementedError):
+        copy.deepcopy(faas)
+
+
+def test_pickle_still_works_despite_copy_being_blocked():
+    """Blocking copy must not block pickling - a supported feature."""
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["a"] = 1
+    loaded = pickle.loads(pickle.dumps(faas, protocol=5))
+    assert loaded["a"] == 1
 
 
 def test_setdefault_existing_key():

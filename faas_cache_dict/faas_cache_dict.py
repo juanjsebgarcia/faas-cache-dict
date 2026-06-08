@@ -420,7 +420,19 @@ class FaaSCacheDict(OrderedDict):
         self.stop_purge_thread()
 
     def copy(self):
-        raise NotImplementedError
+        raise NotImplementedError(
+            "FaaSCacheDict cannot be copied; construct a new instance and add "
+            "items individually instead."
+        )
+
+    def __copy__(self):
+        # copy.copy() consults __copy__ before falling back to the pickle
+        # reduce path, so this keeps copy.copy() consistent with .copy()
+        # (unsupported) while leaving pickling - a supported feature - intact.
+        return self.copy()
+
+    def __deepcopy__(self, memo: Any):
+        return self.copy()
 
     def setdefault(self, key: Any, default: Any = None) -> Any:
         """

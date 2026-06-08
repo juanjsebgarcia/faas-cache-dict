@@ -358,21 +358,6 @@ def test_unpickle_does_not_leak_a_second_purge_thread():
     loaded.close()
 
 
-def test_copy_copy_does_not_leak_a_second_purge_thread():
-    """copy.copy() uses the same reduce path and must also add only one thread."""
-    import copy
-
-    faas = FaaSCacheDict(default_ttl=60)
-    faas["a"] = 1
-    before = _purge_thread_count()
-    clone = copy.copy(faas)
-    after = _purge_thread_count()
-    assert after - before == 1
-    assert clone._purge_thread.is_alive()
-    faas.close()
-    clone.close()
-
-
 def test_unpickled_cache_purge_thread_still_purges():
     """The single thread on an unpickled cache must actually purge expired items."""
     faas = _FastPurge(default_ttl=0.2)

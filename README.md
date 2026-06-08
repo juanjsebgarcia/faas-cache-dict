@@ -171,8 +171,9 @@ cache.close()
 ```
 
 #### `fromkeys()` and `copy()` - Not Supported
-Both `fromkeys()` and `copy()` raise `NotImplementedError`. Use the constructor
-and add items individually instead.
+`fromkeys()`, `copy()`, and the `copy` module's `copy.copy()` / `copy.deepcopy()` all
+raise `NotImplementedError`. Use the constructor and add items individually instead.
+(Pickling, however, *is* supported - see below.)
 
 ### Pickling Support
 The cache dict can be pickled and unpickled. TTL expiry timestamps are preserved,
