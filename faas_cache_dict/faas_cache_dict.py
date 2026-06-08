@@ -78,7 +78,7 @@ class FaaSCacheDict(OrderedDict):
             _is_int(max_items) or (max_items is None), "Invalid max items limit"
         )
         if max_items is not None:
-            _assert(max_items > 0, "Max items limit must >0")
+            _assert(max_items > 0, "Max items limit must be >0")
         self._max_items = max_items
 
         # Lifecycle callables

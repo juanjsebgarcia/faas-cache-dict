@@ -480,13 +480,13 @@ def test_init_invalid_max_items_string_raises():
 
 def test_init_max_items_zero_raises():
     """max_items=0 should raise ValueError."""
-    with pytest.raises(ValueError, match="Max items limit must >0"):
+    with pytest.raises(ValueError, match="Max items limit must be >0"):
         FaaSCacheDict(max_items=0)
 
 
 def test_init_max_items_negative_raises():
     """Negative max_items should raise ValueError."""
-    with pytest.raises(ValueError, match="Max items limit must >0"):
+    with pytest.raises(ValueError, match="Max items limit must be >0"):
         FaaSCacheDict(max_items=-1)
 
 
