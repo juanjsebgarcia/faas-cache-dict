@@ -319,11 +319,15 @@ class FaaSCacheDict(OrderedDict):
             self._purge_expired()
             return [v[1] for v in super().values()]
 
-    def pop(self, key: Any, default: Any = None) -> Any:
+    def pop(self, key: Any, default: Any = _UNSET) -> Any:
         callback_info = None
         with self._lock:
             self._purge_expired()
             if key not in super().keys():
+                # Match dict.pop: raise when the key is absent and no default was
+                # supplied; return the default otherwise.
+                if default is _UNSET:
+                    raise KeyError(key)
                 return default
             value = super().__getitem__(key)[1]
             if self.on_delete_callable:

@@ -481,12 +481,20 @@ def test_pop_expired_key_returns_default():
     assert faas.pop("a", "default") == "default"
 
 
-def test_pop_expired_key_no_default_returns_none():
-    """pop() on expired key with no default should return None."""
+def test_pop_expired_key_no_default_raises_keyerror():
+    """pop() on an expired key with no default should raise KeyError (like dict.pop)."""
     faas = FaaSCacheDict(default_ttl=0.01)
     faas["a"] = 1
     time.sleep(0.02)
-    assert faas.pop("a") is None
+    with pytest.raises(KeyError):
+        faas.pop("a")
+
+
+def test_pop_missing_key_no_default_raises_keyerror():
+    """pop() on a missing key with no default should raise KeyError (like dict.pop)."""
+    faas = FaaSCacheDict(default_ttl=60)
+    with pytest.raises(KeyError):
+        faas.pop("never_existed")
 
 
 def test_popitem_empty_cache_error_message():

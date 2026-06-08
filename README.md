@@ -97,8 +97,8 @@ modifying a key's TTL will not promote it to the most-recently-used position.
 - `True` — key exists but has expired
 - `None` — key doesn't exist (either never added or already purged)
 
-Note: `pop(key)` returns the default value (`None`) for expired keys, unlike
-`cache[key]` which raises `KeyError`. This matches standard dict behavior.
+Note: `pop(key)` raises `KeyError` if the key is missing or expired, whereas
+`pop(key, default)` returns `default` in that case - matching `dict.pop`.
 
 ### LRU
 A max list length constraint which deletes the least recently accessed item once the max
