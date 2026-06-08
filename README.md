@@ -223,11 +223,17 @@ in use. Call `stop_purge_thread()` to explicitly stop the purge thread when done
 - The memory constraint applies to the whole cache dict object not just its contents.
 The cache dict itself consumes a small amount of memory in overheads, so eg. `1K` of
 requested memory will yield slightly less than `1K` of available internal storage.
-- The cache size is tracked as a running total, updated as items are added and removed,
-so reads and writes stay fast as the cache grows. The total is **conservative**: an
-object shared between several entries is counted once per entry, so the limit may be
-enforced slightly early. `get_byte_size()` returns an exact measure (and resynchronises
-the running total).
+- `max_size_bytes` is a **hard ceiling** for values that don't change size after
+insertion. A cheap running total keeps writes O(1) while the cache is under its budget;
+when a write reaches the limit the cache re-measures its size exactly and evicts to fit
+(that write costs O(n)). So inserts are fast until you are actually at capacity, and the
+cache never exceeds the limit for normal (immutable/serialised) values. `get_byte_size()`
+returns the exact size on demand.
+- A value **mutated in place** after insertion is the one exception: the cache only holds
+a reference, so it cannot see a stored object grow without re-measuring it. Such growth
+can temporarily exceed the limit, but the background purge thread re-measures and enforces
+exactly each cycle, so it is corrected within a purge interval (and the limit is never
+silently disabled). Treat cached values as immutable for an instantaneous ceiling.
 - Expired items are reclaimed **lazily** - by aggregate operations (`len`, `keys`, ...),
 on access, or by the background purge thread (every few seconds) - rather than on every
 write. They remain logically invisible (`len`, `in`, `cache[key]` all ignore them) but

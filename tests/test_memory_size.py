@@ -396,3 +396,79 @@ def test_byte_size_counts_shared_values_per_entry():
     # The running total grew by ~another 100K even though an exact measure would
     # dedup the shared object.
     assert faas._self_byte_size - exact_with_one > 50_000
+
+
+def test_byte_limit_survives_in_place_value_mutation():
+    """
+    A value mutated in place after insertion and then removed must not corrupt
+    the running byte total enough to disable enforcement.
+
+    Regression: removal recomputed the entry's (now larger) size, so a
+    grown-then-removed value over-subtracted and drove _self_byte_size negative,
+    after which the `> max_size_bytes` check never fired and the byte limit
+    stopped working entirely.
+    """
+    faas = FaaSCacheDict(max_size_bytes="1M")
+    # Churn: insert a value, grow it in place, delete it (over-subtracts).
+    for i in range(15):
+        v = []
+        faas[f"tmp{i}"] = v
+        v.extend(range(40000))
+        del faas[f"tmp{i}"]
+    # The running total must never go negative (which disabled enforcement).
+    assert faas._self_byte_size >= 0
+    # The byte limit must still be enforced when real data is added.
+    for i in range(80):
+        faas[("real", i)] = ("x" * 50000) + str(i)  # ~4MB of distinct data
+    actual = get_deep_byte_size(faas)  # exact measure; does not resync the total
+    assert actual <= 2 * 1024 * 1024, f"byte limit not enforced: {actual} bytes"
+
+
+def test_byte_total_clamped_when_replacing_mutated_value():
+    """Replacing a value mutated in place must not drive the total negative either."""
+    faas = FaaSCacheDict(max_size_bytes="10M")
+    v = [1]
+    faas["k"] = v
+    v.extend(range(50000))  # grow in place after insertion
+    faas["k"] = "small"  # replace: the old (grown) contribution is over-subtracted
+    assert faas._self_byte_size >= 0
+
+
+def test_byte_limit_is_a_hard_exact_ceiling_at_capacity():
+    """
+    Filling past the limit with distinct values must leave the EXACT size at or
+    under the limit - enforcement re-measures exactly when at capacity, so the
+    ceiling is hard (not a conservative estimate).
+    """
+    faas = FaaSCacheDict(max_size_bytes="200K")
+    for i in range(100):
+        faas[i] = ("x" * 5000) + str(i)  # distinct ~5KB values, ~500K total
+    assert get_deep_byte_size(faas) <= 200 * 1024
+
+
+def test_shared_value_items_not_evicted_when_they_fit():
+    """
+    Entries sharing one large object that fits the limit must NOT be evicted:
+    enforcement uses an exact (deduped) measure, so the per-entry over-count of
+    the running total never discards a fitting item.
+    """
+    faas = FaaSCacheDict(max_size_bytes="1M")
+    shared = "s" * 300_000  # ~300KB; all entries reference the same object
+    for k in ("a", "b", "c", "d"):
+        faas[k] = shared
+    assert len(faas) == 4
+    assert get_deep_byte_size(faas) <= 1024 * 1024
+
+
+def test_in_place_growth_enforced_on_next_sweep():
+    """
+    A value grown in place is invisible to the O(1) hot path, but the exact
+    enforcement sweep (run by the background thread each cycle) catches it. Called
+    directly here to avoid a timing-dependent sleep.
+    """
+    faas = FaaSCacheDict(max_size_bytes="500K")
+    v = list(range(100))
+    faas["k"] = v
+    v.extend(range(200000))  # grow in place, well past the 500K limit
+    faas._shrink_to_fit_byte_size()  # what the background thread runs each cycle
+    assert get_deep_byte_size(faas) <= 500 * 1024

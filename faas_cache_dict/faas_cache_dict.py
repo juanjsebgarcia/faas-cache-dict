@@ -149,9 +149,7 @@ class FaaSCacheDict(OrderedDict):
             if key_present:
                 # Refreshing an existing key: drop its old contribution first.
                 old_expire, old_value = super().__getitem__(key)
-                self._self_byte_size -= self._entry_byte_size(
-                    key, old_expire, old_value
-                )
+                self._account_for_removed_entry(key, old_expire, old_value)
 
             super().__setitem__(key, (expire, value))
             super().move_to_end(key)
@@ -179,7 +177,7 @@ class FaaSCacheDict(OrderedDict):
                     callback_info = (key, value)
                 # Maintain the running byte total incrementally rather than
                 # rescanning the whole cache (see _entry_byte_size / get_byte_size).
-                self._self_byte_size -= self._entry_byte_size(key, expire, value)
+                self._account_for_removed_entry(key, expire, value)
                 super().__delitem__(key)
 
         # Call callback OUTSIDE lock to prevent deadlock
@@ -356,7 +354,7 @@ class FaaSCacheDict(OrderedDict):
             expire, value = super().__getitem__(key)
             if self.on_delete_callable:
                 callback_info = (key, value)
-            self._self_byte_size -= self._entry_byte_size(key, expire, value)
+            self._account_for_removed_entry(key, expire, value)
             super().__delitem__(key)
 
         # Call callback OUTSIDE lock to prevent deadlock
@@ -379,7 +377,7 @@ class FaaSCacheDict(OrderedDict):
             expire, value = super().__getitem__(k)
             if self.on_delete_callable:
                 callback_info = (k, value)
-            self._self_byte_size -= self._entry_byte_size(k, expire, value)
+            self._account_for_removed_entry(k, expire, value)
             super().__delitem__(k)
 
         # Call callback OUTSIDE lock to prevent deadlock
@@ -564,6 +562,12 @@ class FaaSCacheDict(OrderedDict):
                 # skip it (it is far too costly to run on every cache operation).
                 if self._purge_expired():
                     gc.collect()
+                # Re-measure and enforce exactly each cycle so a value mutated in
+                # place after insertion is caught (and the running total resynced)
+                # within a purge interval. Only byte-limited caches need this, so
+                # others stay scan-free.
+                if self._max_size_bytes:
+                    self._shrink_to_fit_byte_size()
             except Exception as err:
                 # Parent may have been collected during purge
                 logger.debug("Purge thread exiting due to exception: %s", err)
@@ -637,6 +641,23 @@ class FaaSCacheDict(OrderedDict):
         """
         return get_deep_byte_size(key) + get_deep_byte_size((expire, value))
 
+    def _account_for_removed_entry(
+        self, key: Any, expire: float | int | None, value: Any
+    ) -> None:
+        """
+        Decrement the running byte total for an entry being removed or replaced,
+        clamped at zero.
+
+        The clamp guards against drift: a value mutated in place after insertion
+        has a different size here (at removal) than it did when added, which could
+        otherwise drive the total negative and silently disable byte-limit
+        enforcement. The background thread resyncs the total to an exact measure
+        each cycle, so any accumulated drift self-heals within a purge interval.
+        """
+        self._self_byte_size -= self._entry_byte_size(key, expire, value)
+        if self._self_byte_size < 0:
+            self._self_byte_size = 0
+
     def _shrink_to_fit_byte_size(self, protected_key: Any = _UNSET) -> None:
         """
         As required delete the oldest LRU items in the cache dict until size criteria is met.
@@ -649,12 +670,17 @@ class FaaSCacheDict(OrderedDict):
         with self._lock:
             self._purge_expired()
             if self._max_size_bytes:
-                # Drive eviction off the running byte total (O(1) per check)
-                # rather than re-measuring the whole cache each iteration. Stop
-                # once empty: the residual is fixed structural overhead eviction
-                # cannot reduce, so we must not loop forever on a tiny limit.
+                # Enforce on an EXACT measure (re-measured each step) so the limit
+                # is a hard ceiling and objects shared between entries are not
+                # double-counted into spurious evictions. This is O(n) per step,
+                # but callers only reach here when the cheap running total reports
+                # the cache is at its byte limit - inserts well under it never
+                # enforce. get_byte_size also resyncs the running total to exact.
+                # Stop once empty: the residual is fixed structural overhead that
+                # eviction cannot reduce, so we must not loop forever on a tiny limit.
                 while (
-                    self._self_byte_size > self._max_size_bytes and super().__len__()
+                    self.get_byte_size(skip_purge=True) > self._max_size_bytes
+                    and super().__len__()
                 ):
                     oldest_key = next(iter(super().__iter__()))
                     if oldest_key == protected_key:
