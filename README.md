@@ -1,18 +1,24 @@
 # faas-cache-dict
 
-[PyPi package repository](https://pypi.org/project/faas-cache-dict/)
+[![PyPI version](https://img.shields.io/pypi/v/faas-cache-dict.svg)](https://pypi.org/project/faas-cache-dict/)
+[![Python versions](https://img.shields.io/pypi/pyversions/faas-cache-dict.svg)](https://pypi.org/project/faas-cache-dict/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A fast thread-safe Python dictionary implementation designed to act as an in-memory RAM
-constrained LRU TTL cache dict for FaaS environments. Though it has many valuable use
-cases outside FaaS.
+**Thread-safe Python in-memory cache dict with LRU eviction, TTL expiry & memory size limits**
 
-This is a Pythonic dict implementation with all the typical methods working `.get`
-`.keys` `.values` `.items` `len` etc. This package uses only core Python stdlib +
-[objsize](https://pypi.org/project/objsize/).
+Built for FaaS / AWS Lambda, useful anywhere you need a fast, bounded, drop-in `dict` cache.
 
-If used in a serverless FaaS environment then this package works best by supporting an
-existing caching strategy, as there is no guarantee that any in-memory data will persist
-between calls.
+```
+pip install faas-cache-dict
+```
+
+A Pythonic `dict` implementation with all the standard methods — `.get`, `.keys`, `.values`,
+`.items`, `len` etc. — extended with configurable RAM limits, per-item TTL, and LRU eviction.
+Uses only core Python stdlib + [objsize](https://pypi.org/project/objsize/).
+
+When used in a serverless FaaS environment this package works best as a complement to
+an existing caching strategy, as there is no guarantee that in-memory data persists
+between invocations.
 
 ## Background
 This was originally designed to be a performant in-memory cache dict for AWS Lambda,

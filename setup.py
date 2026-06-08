@@ -14,8 +14,12 @@ setup(
     name="faas-cache-dict",
     version=__version__,
     description=(
-        "A Python dictionary implementation designed to act as an in-memory cache "
-        "for FaaS environments"
+        "Thread-safe Python in-memory cache dict with LRU eviction, TTL expiry & "
+        "memory size limits — built for FaaS / AWS Lambda"
+    ),
+    keywords=(
+        "lru-cache ttl-cache in-memory-cache cache dictionary thread-safe "
+        "serverless aws-lambda faas python lru ttl memory-bounded"
     ),
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -32,11 +36,16 @@ setup(
     license="MIT",
     install_requires=install_requires,
     classifiers=[
+        "Development Status :: 5 - Production/Stable",
+        "Intended Audience :: Developers",
         "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
         "Programming Language :: Python :: 3.13",
+        "Topic :: Software Development :: Libraries :: Python Modules",
+        "Topic :: System :: Caching",
     ],
 )
