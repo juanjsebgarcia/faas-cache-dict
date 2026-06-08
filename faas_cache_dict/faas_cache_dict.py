@@ -567,7 +567,11 @@ class FaaSCacheDict(OrderedDict):
         with self._lock:
             self._purge_expired()
             if self._max_size_bytes:
-                while self.get_byte_size() > self._max_size_bytes:
+                # Stop once the cache is empty: the residual size is fixed
+                # structural overhead that eviction cannot reduce. Without this
+                # guard delete_oldest_item() would raise KeyError('EmptyCache')
+                # out of __setitem__ / change_byte_size for very small limits.
+                while self.get_byte_size() > self._max_size_bytes and super().__len__():
                     self.delete_oldest_item()
             self._set_self_byte_size()
 

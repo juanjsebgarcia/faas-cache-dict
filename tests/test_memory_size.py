@@ -233,3 +233,46 @@ def test_combined_ttl_memory_maxitems_constraints():
 
     # All items should be expired or purged
     assert len(faas) == 0
+
+
+def test_empty_cache_byte_size_excludes_thread_and_lock():
+    """
+    The reported cache size should reflect stored data, not library plumbing.
+
+    Regression: objsize traversed the background purge thread (~135 KB of
+    reachable interpreter state) and the lock, so an empty cache reported a
+    wildly inflated size.
+    """
+    faas = FaaSCacheDict()
+    assert faas.get_byte_size() < 10_000
+
+
+def test_small_max_size_bytes_allows_insert():
+    """
+    A small byte limit must not be entirely consumed by library plumbing.
+
+    Regression: because the purge thread (~135 KB) counted toward the cache
+    size, any limit below that made the first insert evict everything - including
+    the item itself - and raise KeyError('EmptyCache') out of __setitem__.
+    """
+    faas = FaaSCacheDict(max_size_bytes="1K")
+    faas["a"] = 1
+    assert faas["a"] == 1
+    assert len(faas) == 1
+
+
+def test_small_max_size_bytes_never_raises_keyerror():
+    """Inserting into a small cache must never surface KeyError('EmptyCache')."""
+    faas = FaaSCacheDict(max_size_bytes="2K")
+    for i in range(5):
+        faas[f"k{i}"] = i
+    assert len(faas) >= 1
+
+
+def test_nested_cache_size_excludes_nested_thread():
+    """A nested FaaSCacheDict value must not add its own ~135 KB thread graph."""
+    outer = FaaSCacheDict()
+    base = outer.get_byte_size()
+    outer["nested"] = FaaSCacheDict()
+    delta = outer.get_byte_size() - base
+    assert delta < 10_000
