@@ -112,7 +112,11 @@ def test_memory_size_none_then_limited():
 
 
 def test_memory_size_then_none():
-    faas = FaaSCacheDict(default_ttl=1, max_size_bytes="2M")
+    # 3M of headroom so two ~1MB items comfortably fit regardless of whether the
+    # byte total counts a shared value once (exact) or per entry (the running
+    # total). This exercises change_byte_size(None) disabling the limit, not the
+    # exact-vs-conservative sizing boundary.
+    faas = FaaSCacheDict(default_ttl=1, max_size_bytes="3M")
     load_with_mebibyte_of_data(faas, 1)
     assert len(faas) == 1
     load_with_mebibyte_of_data(faas, 1)
@@ -375,3 +379,20 @@ def test_get_byte_size_skip_purge_does_not_remove_expired():
     assert raw_before == 1
     assert raw_after == 1  # the expired item was NOT purged
     assert size > 0
+
+
+def test_byte_size_counts_shared_values_per_entry():
+    """
+    The running byte total maintained on the hot path counts each entry
+    independently, so two entries sharing one large object are counted twice -
+    conservative for a size limit. This is the documented trade-off of
+    incremental sizing (finding #8); get_byte_size() gives an exact measure.
+    """
+    big = "x" * 100_000
+    faas = FaaSCacheDict()
+    faas["a"] = big
+    exact_with_one = faas.get_byte_size()  # exact: counts `big` once, resyncs total
+    faas["b"] = big  # same object
+    # The running total grew by ~another 100K even though an exact measure would
+    # dedup the shared object.
+    assert faas._self_byte_size - exact_with_one > 50_000

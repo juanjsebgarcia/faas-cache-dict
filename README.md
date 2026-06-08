@@ -223,10 +223,15 @@ in use. Call `stop_purge_thread()` to explicitly stop the purge thread when done
 - The memory constraint applies to the whole cache dict object not just its contents.
 The cache dict itself consumes a small amount of memory in overheads, so eg. `1K` of
 requested memory will yield slightly less than `1K` of available internal storage.
-- Due to extra processing, performance does **slowly** degrade with size (item count),
-you will need to test this for your situation. In 99% of use cases this will still be
-an order of magnitude faster than doing network calls to an external cache (and more
-reliable).
+- The cache size is tracked as a running total, updated as items are added and removed,
+so reads and writes stay fast as the cache grows. The total is **conservative**: an
+object shared between several entries is counted once per entry, so the limit may be
+enforced slightly early. `get_byte_size()` returns an exact measure (and resynchronises
+the running total).
+- Expired items are reclaimed **lazily** - by aggregate operations (`len`, `keys`, ...),
+on access, or by the background purge thread (every few seconds) - rather than on every
+write. They remain logically invisible (`len`, `in`, `cache[key]` all ignore them) but
+may briefly occupy memory before being purged.
 - `on_delete_callable` hooks are invoked outside the lock to prevent deadlocks. Note
 that the item has already been deleted from the cache when your callback executes.
 - Iteration (`for key in cache`) takes a snapshot of keys under the lock, but yields

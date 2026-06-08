@@ -428,12 +428,26 @@ def test_purge_on_change_byte_size():
     assert _raw_len(faas) == 0
 
 
-def test_purge_on_setitem_via_shrink():
-    """__setitem__ should purge expired items via _shrink_to_fit_byte_size."""
+def test_setitem_does_not_eagerly_purge_but_stays_correct():
+    """
+    __setitem__ no longer scans-and-purges the whole cache on every write (that
+    was the O(n)-per-insert cost). Expired items are reclaimed lazily - by
+    aggregate operations, on access, or by the background thread - so raw storage
+    may briefly retain them while the cache still behaves correctly.
+    """
     faas = FaaSCacheDict(default_ttl=0.05, max_size_bytes="1M")
     faas["a"] = 1
     faas["b"] = 2
-    time.sleep(0.1)  # Let items expire
+    time.sleep(0.1)  # Let "a" and "b" expire
     assert _raw_len(faas) == 2
-    faas["c"] = 3  # Trigger __setitem__ which calls _shrink_to_fit_byte_size
-    assert _raw_len(faas) == 1  # Only "c" remains
+    faas.default_ttl = 60  # so "c" does not expire during the assertions below
+
+    faas["c"] = 3  # a tiny insert under the limit does NOT eagerly purge a, b
+    assert _raw_len(faas) == 3
+
+    # Logically the cache is correct: expired keys are invisible...
+    assert len(faas) == 1
+    assert "a" not in faas
+    assert faas["c"] == 3
+    # ...and the aggregate len() call above reclaimed the expired raw storage.
+    assert _raw_len(faas) == 1
