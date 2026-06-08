@@ -234,7 +234,7 @@ outside the lock. In multi-threaded code, keys may be deleted between iteration 
 access—wrap `cache[key]` in try/except if needed.
 
 ## Support
-CPython 3.9 or greater.
+CPython 3.10 or greater.
 
 ## Contributions
 This code is distributed under an open license. Feel free to fork it or preferably open
