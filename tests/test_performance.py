@@ -30,8 +30,8 @@ def test_insert_sizes_only_one_entry_not_whole_cache(monkeypatch):
     traversed = {"bytes": 0}
     real_get_deep_byte_size = fcd.get_deep_byte_size
 
-    def counting(obj):
-        size = real_get_deep_byte_size(obj)
+    def counting(obj, exclude=None):
+        size = real_get_deep_byte_size(obj, exclude=exclude)
         traversed["bytes"] += size
         return size
 

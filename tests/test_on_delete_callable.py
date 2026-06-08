@@ -1,3 +1,5 @@
+import threading
+import time
 from unittest.mock import Mock, call
 
 from faas_cache_dict import FaaSCacheDict
@@ -244,3 +246,76 @@ def test_rapid_on_delete_callable_invocations():
         del faas[f"key_{i}"]
 
     assert call_count["count"] == 100
+
+
+def _hook_lock_ownership_recorder(cache_box, held):
+    def hook(key, value):
+        held.append(cache_box[0]._lock._is_owned())
+
+    return hook
+
+
+def test_on_delete_hook_never_fires_under_lock():
+    """
+    The on_delete hook must run with the lock released on EVERY removal path -
+    eviction and expiry included, not just del/pop - so a hook that touches the
+    cache from another thread cannot deadlock.
+    """
+    box = [None]
+    held = []
+    hook = _hook_lock_ownership_recorder(box, held)
+
+    # LRU eviction
+    box[0] = FaaSCacheDict(max_items=1, on_delete_callable=hook)
+    box[0]["a"] = 1
+    box[0]["b"] = 2  # evicts "a"
+
+    # Expiry purge
+    box[0] = FaaSCacheDict(default_ttl=0.05, on_delete_callable=hook)
+    box[0]["a"] = 1
+    time.sleep(0.1)
+    box[0]._purge_expired()
+
+    # purge(), del, pop
+    box[0] = FaaSCacheDict(on_delete_callable=hook)
+    box[0]["a"] = 1
+    box[0].purge()
+    box[0] = FaaSCacheDict(on_delete_callable=hook)
+    box[0]["a"] = 1
+    del box[0]["a"]
+    box[0] = FaaSCacheDict(on_delete_callable=hook)
+    box[0]["a"] = 1
+    box[0].pop("a")
+
+    assert len(held) == 5  # one hook call per removal above
+    assert all(owned is False for owned in held), "a hook fired while holding the lock"
+
+
+def test_on_delete_hook_on_eviction_does_not_deadlock():
+    """
+    Regression: a hook that synchronises with another thread which also uses the
+    cache used to deadlock on the eviction/expiry paths, because the hook fired
+    while the lock was held.
+    """
+    faas = FaaSCacheDict(max_items=1)
+    hook_entered = threading.Event()
+    worker_done = threading.Event()
+
+    def hook(key, value):
+        hook_entered.set()
+        worker_done.wait(timeout=5)  # waits on a thread that needs the cache lock
+
+    def worker():
+        hook_entered.wait(timeout=5)
+        _ = len(faas)  # acquires the lock - would block if the hook held it
+        worker_done.set()
+
+    faas.on_delete_callable = hook
+    faas["a"] = 1
+    t = threading.Thread(target=worker)
+    t.start()
+    faas["b"] = 2  # evicts "a" -> fires the hook (must be outside the lock)
+    t.join(timeout=6)
+
+    assert worker_done.is_set(), "deadlock: on_delete hook fired while holding the lock"
+    faas.close()

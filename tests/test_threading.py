@@ -451,3 +451,42 @@ def test_setitem_does_not_eagerly_purge_but_stays_correct():
     assert faas["c"] == 3
     # ...and the aggregate len() call above reclaimed the expired raw storage.
     assert _raw_len(faas) == 1
+
+
+def test_concurrent_removals_fire_each_on_delete_exactly_once():
+    """
+    Under concurrent removals each removed item must fire its on_delete hook
+    exactly once - no lost or duplicated callbacks - despite the deferred-callback
+    buffer being shared across threads, and with no deadlock.
+    """
+    count = {"n": 0}
+    count_lock = threading.Lock()
+
+    def cb(key, value):
+        with count_lock:
+            count["n"] += 1
+
+    faas = FaaSCacheDict(on_delete_callable=cb)
+    errors = []
+    n_threads, per_thread = 6, 300
+
+    def worker(tid):
+        try:
+            for i in range(per_thread):
+                key = (tid, i)
+                faas[key] = i
+                del faas[key]  # each delete fires exactly one hook
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+
+    threads = [threading.Thread(target=worker, args=(t,)) for t in range(n_threads)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+    time.sleep(0.1)  # let any final deferred callbacks drain
+
+    assert errors == []
+    assert all(not t.is_alive() for t in threads), "a worker hung (possible deadlock)"
+    assert count["n"] == n_threads * per_thread
+    faas.close()

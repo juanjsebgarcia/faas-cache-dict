@@ -4,6 +4,7 @@ import sys
 import time
 import weakref
 from collections import OrderedDict
+from contextlib import contextmanager
 from threading import RLock, Thread
 from typing import Any, Callable, Iterable
 
@@ -84,6 +85,10 @@ class FaaSCacheDict(OrderedDict):
         self.on_delete_callable = on_delete_callable
 
         self._lock = RLock()
+        # Reentrant-lock nesting depth and a buffer of (key, value) pairs whose
+        # on_delete hooks must fire AFTER the outermost lock release (see _locked).
+        self._lock_depth = 0
+        self._pending_on_delete = []
         super().__init__()
         # Seed the running byte total with the empty-cache overhead, so the
         # incremental size (maintained per insert/delete) includes it; then load
@@ -100,8 +105,41 @@ class FaaSCacheDict(OrderedDict):
         self._purge_thread.daemon = True
         self._purge_thread.start()
 
+    @contextmanager
+    def _locked(self):
+        """
+        Acquire the reentrant lock; on the OUTERMOST release, fire any buffered
+        on_delete callbacks.
+
+        Removals that happen deep inside an eviction or expiry sweep buffer their
+        (key, value) pairs rather than calling the hook directly, so the hook
+        always runs with the lock released - preventing a deadlock if the hook
+        touches the cache from another thread.
+        """
+        self._lock.acquire()
+        self._lock_depth += 1
+        try:
+            yield
+        finally:
+            self._lock_depth -= 1
+            pending = None
+            if self._lock_depth == 0 and self._pending_on_delete:
+                pending = self._pending_on_delete
+                self._pending_on_delete = []
+            self._lock.release()
+            if pending:
+                for key, value in pending:
+                    try:
+                        self.on_delete_callable(key, value)
+                    except Exception as err:
+                        logger.warning(
+                            "on_delete_callable raised exception: %s",
+                            err,
+                            exc_info=True,
+                        )
+
     def __getitem__(self, key: Any) -> Any:
-        with self._lock:
+        with self._locked():
             if self.is_expired(key):
                 self.__delitem__(key)
                 raise KeyError(key)
@@ -112,7 +150,7 @@ class FaaSCacheDict(OrderedDict):
     def __setitem__(
         self, key: Any, value: Any, expire_at: float | int | None = None
     ) -> None:
-        with self._lock:
+        with self._locked():
             expire = None
             if expire_at is not None:
                 _assert(
@@ -164,8 +202,7 @@ class FaaSCacheDict(OrderedDict):
         is_terminal: bool = True,
         ignore_missing: bool = False,
     ) -> None:
-        callback_info = None
-        with self._lock:
+        with self._locked():
             try:
                 expire, value = super().__getitem__(key)
             except KeyError as err:
@@ -173,27 +210,17 @@ class FaaSCacheDict(OrderedDict):
                     raise err
             else:
                 if self.on_delete_callable and is_terminal:
-                    # Capture value for the callback, fired outside the lock below
-                    callback_info = (key, value)
+                    # Buffer the hook; _locked fires it after the outermost lock
+                    # release, so it never runs while the lock is held.
+                    self._pending_on_delete.append((key, value))
                 # Maintain the running byte total incrementally rather than
                 # rescanning the whole cache (see _entry_byte_size / get_byte_size).
                 self._account_for_removed_entry(key, expire, value)
                 super().__delitem__(key)
 
-        # Call callback OUTSIDE lock to prevent deadlock
-        if callback_info is not None:
-            try:
-                self.on_delete_callable(callback_info[0], callback_info[1])
-            except Exception as err:
-                logger.warning(
-                    "on_delete_callable raised exception: %s",
-                    err,
-                    exc_info=True,
-                )
-
     def __iter__(self) -> Iterable[Any]:
         """Yield non-expired keys. Purges expired items before iterating."""
-        with self._lock:
+        with self._locked():
             self._purge_expired()
             keys = list(super().__iter__())
 
@@ -202,17 +229,17 @@ class FaaSCacheDict(OrderedDict):
                 yield key
 
     def __contains__(self, key: Any) -> bool:
-        with self._lock:
+        with self._locked():
             self._purge_expired()
             return True if key in super().keys() else False
 
     def __len__(self) -> int:
-        with self._lock:
+        with self._locked():
             self._purge_expired()
             return super().__len__()
 
     def __repr__(self) -> str:
-        with self._lock:
+        with self._locked():
             self._purge_expired()
             return (
                 "<FaaSCacheDict@{:#08x}; default_ttl={}, max_memory={}, "
@@ -235,7 +262,7 @@ class FaaSCacheDict(OrderedDict):
 
         It is based on the OrderedDict reducer
         """
-        with self._lock:
+        with self._locked():
             self._purge_expired()
             inst_dict = vars(self).copy()
             for k in vars(OrderedDict()):
@@ -244,6 +271,8 @@ class FaaSCacheDict(OrderedDict):
             inst_dict.pop("_lock")
             inst_dict.pop("_purge_thread")
             inst_dict.pop("_stop_purge", None)
+            inst_dict.pop("_lock_depth", None)
+            inst_dict.pop("_pending_on_delete", None)
 
             # Store items separately to restore with original expiry times
             inst_dict["_pickled_items"] = list(super().items())
@@ -260,6 +289,8 @@ class FaaSCacheDict(OrderedDict):
 
         new_state["_lock"] = RLock()
         new_state["_stop_purge"] = False
+        new_state["_lock_depth"] = 0
+        new_state["_pending_on_delete"] = []
         self.__dict__.update(new_state)
 
         # Restore items directly to preserve original expiry times
@@ -274,17 +305,17 @@ class FaaSCacheDict(OrderedDict):
             target=FaaSCacheDict._purge_thread_func, args=(weakref.ref(self),)
         )
         self._purge_thread.daemon = True
-        with self._lock:
+        with self._locked():
             self._purge_thread.start()
 
     def __sizeof__(self) -> int:
-        with self._lock:
+        with self._locked():
             if not self._suppress_sizeof_purge:
                 self._purge_expired()
             return super().__sizeof__()
 
     def __reversed__(self) -> Iterable[Any]:
-        with self._lock:
+        with self._locked():
             self._purge_expired()
             keys = list(super().__reversed__())
 
@@ -295,7 +326,7 @@ class FaaSCacheDict(OrderedDict):
     def __eq__(self, other: Any) -> bool:
         if not hasattr(other, "items"):
             return False
-        with self._lock:
+        with self._locked():
             self._purge_expired()
             self_items = [(k, v[1]) for (k, v) in super().items()]
         # Mirror OrderedDict: order-sensitive against another OrderedDict,
@@ -320,30 +351,29 @@ class FaaSCacheDict(OrderedDict):
     # Dict functions
     ###
     def get(self, key: Any, default: Any = None) -> Any:
-        with self._lock:
+        with self._locked():
             try:
                 return self[key]
             except KeyError:
                 return default
 
     def keys(self) -> list[Any]:
-        with self._lock:
+        with self._locked():
             self._purge_expired()
             return list(super().keys())
 
     def items(self) -> list[tuple[Any, Any]]:
-        with self._lock:
+        with self._locked():
             self._purge_expired()
             return [(k, v[1]) for (k, v) in super().items()]
 
     def values(self) -> list[Any]:
-        with self._lock:
+        with self._locked():
             self._purge_expired()
             return [v[1] for v in super().values()]
 
     def pop(self, key: Any, default: Any = _UNSET) -> Any:
-        callback_info = None
-        with self._lock:
+        with self._locked():
             self._purge_expired()
             if key not in super().keys():
                 # Match dict.pop: raise when the key is absent and no default was
@@ -353,49 +383,32 @@ class FaaSCacheDict(OrderedDict):
                 return default
             expire, value = super().__getitem__(key)
             if self.on_delete_callable:
-                callback_info = (key, value)
+                # Buffer the hook; _locked fires it after the lock is released.
+                self._pending_on_delete.append((key, value))
             self._account_for_removed_entry(key, expire, value)
             super().__delitem__(key)
-
-        # Call callback OUTSIDE lock to prevent deadlock
-        if callback_info is not None:
-            try:
-                self.on_delete_callable(callback_info[0], callback_info[1])
-            except Exception as err:
-                logger.warning(
-                    "on_delete_callable raised exception: %s", err, exc_info=True
-                )
-        return value
+            return value
 
     def popitem(self, last: bool = True) -> tuple[Any, Any]:
-        callback_info = None
-        with self._lock:
+        with self._locked():
             self._purge_expired()
             if not super().__len__():
                 raise KeyError("EmptyCache")
             k = list(super().keys())[-1 if last else 0]
             expire, value = super().__getitem__(k)
             if self.on_delete_callable:
-                callback_info = (k, value)
+                # Buffer the hook; _locked fires it after the lock is released.
+                self._pending_on_delete.append((k, value))
             self._account_for_removed_entry(k, expire, value)
             super().__delitem__(k)
-
-        # Call callback OUTSIDE lock to prevent deadlock
-        if callback_info is not None:
-            try:
-                self.on_delete_callable(callback_info[0], callback_info[1])
-            except Exception as err:
-                logger.warning(
-                    "on_delete_callable raised exception: %s", err, exc_info=True
-                )
-        return k, value
+            return k, value
 
     def clear(self) -> None:
         return self.purge()
 
     def purge(self) -> None:
         """Delete all data in the cache, can't just call clear as it needs to call on_delete_callable"""
-        with self._lock:
+        with self._locked():
             for key in list(super().__iter__()):
                 self.__delitem__(key, ignore_missing=True)
             # Resync the (now empty) cache size to an exact measure.
@@ -417,7 +430,7 @@ class FaaSCacheDict(OrderedDict):
         If key is in the cache and not expired, return its value.
         Otherwise, set key to default and return default.
         """
-        with self._lock:
+        with self._locked():
             try:
                 return self[key]
             except KeyError:
@@ -433,7 +446,7 @@ class FaaSCacheDict(OrderedDict):
 
     def move_to_end(self, key: Any, last: bool = True) -> None:
         """Move an existing key to either end of the cache. Raises KeyError if expired or missing."""
-        with self._lock:
+        with self._locked():
             if self.is_expired(key):
                 self.__delitem__(key)
                 raise KeyError(key)
@@ -450,7 +463,7 @@ class FaaSCacheDict(OrderedDict):
         if now is None:
             now = time.time()
 
-        with self._lock:
+        with self._locked():
             if self.is_expired(key, now=now):
                 self.__delitem__(key)
                 raise KeyError(key)
@@ -470,7 +483,7 @@ class FaaSCacheDict(OrderedDict):
         if ttl is not None:
             _assert(ttl >= 0, "TTL must be non-negative")
 
-        with self._lock:
+        with self._locked():
             if self.is_expired(key):
                 self.__delitem__(key)
                 raise KeyError(key)
@@ -484,7 +497,7 @@ class FaaSCacheDict(OrderedDict):
     def expire_at(self, key: Any, timestamp: float | int) -> None:
         """Set the key expire absolute timestamp (epoch seconds - ie `time.time()`)"""
         _assert(_is_number(timestamp), "Invalid expiry timestamp")
-        with self._lock:
+        with self._locked():
             if self.is_expired(key):
                 self.__delitem__(key)
                 raise KeyError(key)
@@ -502,7 +515,7 @@ class FaaSCacheDict(OrderedDict):
         if now is None:
             now = time.time()
 
-        with self._lock:
+        with self._locked():
             try:
                 expire, _value = super().__getitem__(key)
             except KeyError:
@@ -523,7 +536,7 @@ class FaaSCacheDict(OrderedDict):
         thread - calling it on every synchronous purge (len(), keys(), inserts at
         capacity, ...) was a large and needless cost.
         """
-        with self._lock:
+        with self._locked():
             _remove = [
                 key for key in list(super().__iter__()) if self.is_expired(key)
             ]
@@ -584,7 +597,7 @@ class FaaSCacheDict(OrderedDict):
         skips the expiry purge beforehand (used from within a purge to avoid
         re-entrancy); it is not a shortcut that returns a stale cached value.
         """
-        with self._lock:
+        with self._locked():
             if not skip_purge:
                 self._purge_expired()
             # Suppress __sizeof__'s own purge while objsize traverses us, so the
@@ -592,7 +605,12 @@ class FaaSCacheDict(OrderedDict):
             # (skip_purge=True).
             self._suppress_sizeof_purge = True
             try:
-                self._self_byte_size = get_deep_byte_size(self)
+                # Exclude the pending-callback buffer: it transiently holds
+                # already-removed entries (awaiting their hook) that must not be
+                # counted toward the cache's size during enforcement.
+                self._self_byte_size = get_deep_byte_size(
+                    self, exclude=[self._pending_on_delete]
+                )
             finally:
                 self._suppress_sizeof_purge = False
             return self._self_byte_size
@@ -613,7 +631,7 @@ class FaaSCacheDict(OrderedDict):
             # Validate by converting - will raise if invalid
             converted = user_input_byte_size_to_bytes(max_size_bytes)
             _assert(converted > 0, "Byte size must be >0")
-        with self._lock:
+        with self._locked():
             self._max_size_user = max_size_bytes
             self._max_size_bytes = None
             if self._max_size_user is not None:
@@ -667,7 +685,7 @@ class FaaSCacheDict(OrderedDict):
         overhead is accounted for), it is removed and ``DataTooLarge`` is raised
         rather than discarding it without warning.
         """
-        with self._lock:
+        with self._locked():
             self._purge_expired()
             if self._max_size_bytes:
                 # Enforce on an EXACT measure (re-measured each step) so the limit
@@ -707,7 +725,7 @@ class FaaSCacheDict(OrderedDict):
         )
         if max_items is not None:
             _assert(max_items > 0, "Max items limit must be >0")
-        with self._lock:
+        with self._locked():
             self._max_items = max_items
             if self._max_items is not None:
                 # Purge once up front, then evict heads directly (without
@@ -733,6 +751,6 @@ class FaaSCacheDict(OrderedDict):
         """
         Remove the oldest item in the cache, which is the HEAD of the OrderedDict
         """
-        with self._lock:
+        with self._locked():
             self._purge_expired()
             self._evict_oldest()

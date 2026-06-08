@@ -244,8 +244,13 @@ silently disabled). Treat cached values as immutable for an instantaneous ceilin
 on access, or by the background purge thread (every few seconds) - rather than on every
 write. They remain logically invisible (`len`, `in`, `cache[key]` all ignore them) but
 may briefly occupy memory before being purged.
-- `on_delete_callable` hooks are invoked outside the lock to prevent deadlocks. Note
-that the item has already been deleted from the cache when your callback executes.
+- `on_delete_callable` hooks are always invoked with the lock released - on every
+removal path, including LRU eviction and background expiry, not just `del`/`pop`. So a
+hook may safely touch the cache (even from another thread) without deadlocking. The item
+has already been removed from the cache when your hook runs, and hooks fire in removal
+order once the triggering operation completes. For bulk removals (e.g. `clear()` or a
+large eviction), the removed values are held until their hooks have all run, so memory
+is reclaimed after the hooks complete rather than during the removal.
 - Iteration (`for key in cache`) takes a snapshot of keys under the lock, but yields
 outside the lock. In multi-threaded code, keys may be deleted between iteration and
 access—wrap `cache[key]` in try/except if needed.

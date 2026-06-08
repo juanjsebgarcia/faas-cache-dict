@@ -28,7 +28,7 @@ def _cache_size_filter(obj: Any) -> bool:
     return objsize.default_object_filter(obj)
 
 
-def get_deep_byte_size(obj: Any) -> int:
+def get_deep_byte_size(obj: Any, exclude: Any = None) -> int:
     """
     Get the deep byte size of an object, this uses `objsize` to determine an accurate byte size
     of the object in system memory.
@@ -36,8 +36,12 @@ def get_deep_byte_size(obj: Any) -> int:
     The cache's background purge thread and lock are excluded from the traversal,
     so the result reflects the cached data rather than fixed library overhead
     (objsize would otherwise attribute ~135 KB of interpreter state to them).
+
+    ``exclude`` is an optional iterable of objects whose subtrees are excluded
+    from the measurement (e.g. the cache's pending-callback buffer, which transiently
+    holds already-removed entries that must not be counted toward the size).
     """
-    return objsize.get_deep_size(obj, filter_func=_cache_size_filter)
+    return objsize.get_deep_size(obj, exclude=exclude, filter_func=_cache_size_filter)
 
 
 def user_input_byte_size_to_bytes(user_bytes: int | str) -> int:
