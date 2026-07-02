@@ -194,7 +194,18 @@ class FaaSCacheDict(OrderedDict):
             self._self_byte_size += new_entry_size
 
             if self._max_size_bytes and self._self_byte_size > self._max_size_bytes:
-                self._shrink_to_fit_byte_size(protected_key=key)
+                try:
+                    self._shrink_to_fit_byte_size(protected_key=key)
+                except DataTooLarge:
+                    if key_present:
+                        # A failed update must not destroy the previous value.
+                        # The shrink loop has already removed the new entry (and
+                        # evicted everything older), so the cache is empty here:
+                        # reinstate the old entry and resync the size exactly.
+                        # The key's LRU recency is refreshed, not restored.
+                        super().__setitem__(key, (old_expire, old_value))
+                        self._set_self_byte_size(skip_purge=True)
+                    raise
 
     def __delitem__(
         self,

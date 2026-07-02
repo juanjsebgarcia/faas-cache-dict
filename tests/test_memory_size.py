@@ -472,3 +472,45 @@ def test_in_place_growth_enforced_on_next_sweep():
     v.extend(range(200000))  # grow in place, well past the 500K limit
     faas._shrink_to_fit_byte_size()  # what the background thread runs each cycle
     assert get_deep_byte_size(faas) <= 500 * 1024
+
+
+def test_failed_oversize_update_preserves_existing_value():
+    """
+    Updating an existing key with a value that cannot fit must raise
+    DataTooLarge AND leave the previously stored value intact.
+
+    Regression: the old entry was replaced before byte-limit enforcement ran,
+    so a failed update destroyed it.
+
+    LRU position: enforcement only fails once every OTHER entry has been
+    evicted trying to make room (the updated key is moved to the tail first,
+    so all its neighbours are older and go before it). The restored key is
+    therefore always the sole occupant - head and tail at once - and behaves
+    as the oldest entry from then on. This test pins that whole state.
+    """
+    faas = FaaSCacheDict()
+    faas["a"] = 1
+    faas["k"] = "small"
+    faas["b"] = 2
+    seeded_size = faas.get_byte_size()
+
+    big = "x" * 800
+    big_entry_size = get_deep_byte_size("k") + get_deep_byte_size((None, big))
+    # The oversized value fits alone (passing the cheap up-front reject) but
+    # not together with the cache's structural overhead, even once every other
+    # entry has been evicted.
+    faas.change_byte_size(seeded_size + big_entry_size // 2)
+
+    with pytest.raises(DataTooLarge):
+        faas["k"] = big
+
+    # The previous value survives the failed update, as the cache's sole
+    # occupant: its neighbours were evicted in the attempt to make room.
+    assert faas["k"] == "small"
+    assert faas.keys() == ["k"]
+
+    # The restored key holds its standing as the oldest entry: later inserts
+    # queue behind it, they do not displace it from the head.
+    faas["z"] = 3
+    assert faas.keys() == ["k", "z"]
+    faas.close()
