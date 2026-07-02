@@ -26,6 +26,15 @@ def _raw_len(faas):
     return len(list(super(FaaSCacheDict, faas).__iter__()))
 
 
+class _UnsizeableValue:
+    """
+    Object whose byte size cannot be measured, poisoning objsize traversal.
+    """
+
+    def __sizeof__(self):
+        raise RuntimeError("unmeasurable")
+
+
 def test_purge_thread_alive():
     faas = FaaSCacheDict()
     time.sleep(1)
@@ -338,6 +347,57 @@ def test_cache_still_works_after_close():
     assert faas["b"] == 2
     del faas["a"]
     assert "a" not in faas
+
+
+def test_purge_thread_survives_purge_cycle_exception():
+    """
+    A failure in one purge cycle must not kill the background thread.
+
+    Regression: any exception in the purge loop (e.g. objsize failing on a value
+    mutated into something unmeasurable after insertion) silently terminated the
+    thread, permanently stopping expiry and byte-limit enforcement.
+    """
+    faas = _FastPurge(default_ttl=60, max_size_bytes="1M")
+    holder = []
+    faas["poison"] = holder
+    # Mutate the stored value AFTER insertion so it is only unmeasurable when
+    # the background thread re-measures the cache, not at insert time.
+    holder.append(_UnsizeableValue())
+
+    # Let at least one purge cycle hit the measurement failure
+    time.sleep(faas._auto_purge_seconds + 0.5)
+    assert faas._purge_thread.is_alive()
+
+    # The thread must still be doing its job on later cycles
+    faas["short_lived"] = 1
+    faas.set_ttl("short_lived", 0.1)
+    time.sleep(faas._auto_purge_seconds + 0.5)
+    assert faas._purge_thread.is_alive()
+    assert _raw_len(faas) == 1  # only the unexpired poison entry remains
+    faas.close()
+
+
+def test_expired_unmeasurable_value_still_purged():
+    """
+    An entry whose value became unmeasurable after insertion must still be
+    removable when it expires, and must not block the purge of other entries.
+
+    Regression: removal accounting re-measures the entry, so an unmeasurable
+    value made every deletion attempt raise - the expired entry (and everything
+    queued behind it in the purge sweep) could never be removed.
+    """
+    faas = _FastPurge(default_ttl=0.1, max_size_bytes="1M")
+    holder = []
+    faas["poison"] = holder
+    # Mutate the stored value AFTER insertion so it is only unmeasurable at
+    # removal time, not at insert time.
+    holder.append(_UnsizeableValue())
+    faas["short_lived"] = 1
+
+    time.sleep(faas._auto_purge_seconds + 0.5)
+    assert faas._purge_thread.is_alive()
+    assert _raw_len(faas) == 0  # both entries purged, poison included
+    faas.close()
 
 
 def test_unpickle_does_not_leak_a_second_purge_thread():

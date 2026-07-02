@@ -591,9 +591,17 @@ class FaaSCacheDict(OrderedDict):
                 if self._max_size_bytes:
                     self._shrink_to_fit_byte_size()
             except Exception as err:
-                # Parent may have been collected during purge
-                logger.debug("Purge thread exiting due to exception: %s", err)
-                return
+                # A failed cycle (e.g. objsize choking on a value mutated into
+                # something unmeasurable) must not kill the thread: expiry and
+                # byte-limit enforcement would silently stop for the cache's
+                # remaining lifetime. Log it and retry next cycle. The parent
+                # cannot have been collected mid-cycle - this thread holds a
+                # strong reference to it throughout.
+                logger.warning(
+                    "Exception during background purge cycle: %s",
+                    err,
+                    exc_info=True,
+                )
 
     ###
     # Memory size functions
@@ -681,7 +689,22 @@ class FaaSCacheDict(OrderedDict):
         enforcement. The background thread resyncs the total to an exact measure
         each cycle, so any accumulated drift self-heals within a purge interval.
         """
-        self._self_byte_size -= self._entry_byte_size(key, expire, value)
+        try:
+            entry_size = self._entry_byte_size(key, expire, value)
+        except Exception as err:
+            # A value mutated in place into something unmeasurable (e.g. its
+            # __sizeof__ now raises) must still be removable - expiry purges and
+            # explicit deletes would otherwise fail forever on this entry.
+            # Subtract nothing; the running total over-counts until the next
+            # successful exact resync, which is conservative for a size limit.
+            logger.warning(
+                "Failed to measure entry being removed (key=%r): %s",
+                key,
+                err,
+                exc_info=True,
+            )
+            entry_size = 0
+        self._self_byte_size -= entry_size
         if self._self_byte_size < 0:
             self._self_byte_size = 0
 
