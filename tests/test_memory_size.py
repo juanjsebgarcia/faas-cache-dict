@@ -398,6 +398,84 @@ def test_byte_size_counts_shared_values_per_entry():
     assert faas._self_byte_size - exact_with_one > 50_000
 
 
+def _exact_size_without_resync(faas):
+    """
+    Exact deep size of the cache, measured without get_byte_size (which would
+    resync the running total under test) and without purging.
+    """
+    with faas._locked():
+        faas._suppress_sizeof_purge = True
+        try:
+            return get_deep_byte_size(faas, exclude=[faas._pending_on_delete])
+        finally:
+            faas._suppress_sizeof_purge = False
+
+
+def test_running_byte_total_tracks_dict_storage():
+    """
+    The running byte total must include the dict's own storage, not just the
+    entries, through inserts and deletes alike.
+
+    Regression: only each entry's key and value were counted, missing the
+    hash table and the OrderedDict's per-entry ordering nodes. For small
+    entries the total was ~50% low, and after mass deletes ~95% low.
+    """
+    faas = FaaSCacheDict(max_size_bytes="10M")
+    faas.stop_purge_thread()
+    # Keys and values are distinct ints beyond the small-int cache, so no object
+    # is shared (sharing makes the per-entry total over-count, a separate issue)
+    for i in range(1000, 6000):
+        faas[i] = i * 3
+    exact = _exact_size_without_resync(faas)
+    assert abs(faas._self_byte_size - exact) <= exact * 0.02
+
+    for i in range(1000, 5900):
+        del faas[i]
+    exact = _exact_size_without_resync(faas)
+    assert abs(faas._self_byte_size - exact) <= exact * 0.02
+    faas.close()
+
+
+@pytest.mark.parametrize("remove", ["pop", "popitem"])
+def test_running_byte_total_exact_through_pop_and_popitem(remove):
+    """
+    pop() and popitem() must keep the running byte total exact, as del does.
+
+    Regression: both removed entries without going through __delitem__, so
+    they skipped the container-size tracking and the total drifted ~70% high
+    after mass removals.
+    """
+    faas = FaaSCacheDict(max_size_bytes="10M")
+    faas.stop_purge_thread()
+    for i in range(1000, 2500):
+        faas[i] = i * 3
+    for i in range(1000, 2450):
+        if remove == "pop":
+            faas.pop(i)
+        else:
+            faas.popitem(last=False)
+    exact = _exact_size_without_resync(faas)
+    assert abs(faas._self_byte_size - exact) <= exact * 0.02
+    faas.close()
+
+
+def test_small_entries_never_exceed_byte_limit():
+    """
+    A cache of many small entries must stay within its byte limit after every
+    insert, not only after an exact resync.
+
+    Regression: the undercounted running total let such a cache reach ~1.7x
+    its limit before enforcement noticed.
+    """
+    limit = 64 * 1024
+    faas = FaaSCacheDict(max_size_bytes=limit)
+    faas.stop_purge_thread()
+    for i in range(1000, 2500):
+        faas[i] = i * 3
+        assert _exact_size_without_resync(faas) <= limit, f"over limit at key {i}"
+    faas.close()
+
+
 def test_byte_limit_survives_in_place_value_mutation():
     """
     A value mutated in place after insertion and then removed must not corrupt

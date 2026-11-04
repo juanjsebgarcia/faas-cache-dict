@@ -207,9 +207,19 @@ class FaaSCacheDict(OrderedDict):
                 old_expire, old_value = super().__getitem__(key)
                 self._account_for_removed_entry(key, old_expire, old_value)
 
+            # The per-entry measure misses the dict's own storage (its hash table
+            # and ordering nodes), which the exact measure includes. Track that
+            # too, via the container's shallow size: O(1), and it bypasses our
+            # purging __sizeof__. It grows by one ordering node per entry, plus a
+            # step whenever the hash table is resized.
+            if self._max_size_bytes:
+                container_before = super().__sizeof__()
             super().__setitem__(key, (expire, value))
             super().move_to_end(key)
-            self._self_byte_size += new_entry_size
+            if self._max_size_bytes:
+                self._self_byte_size += new_entry_size + (
+                    super().__sizeof__() - container_before
+                )
 
             if self._max_size_bytes and self._self_byte_size > self._max_size_bytes:
                 try:
@@ -246,7 +256,18 @@ class FaaSCacheDict(OrderedDict):
                 # Maintain the running byte total incrementally rather than
                 # rescanning the whole cache (see _entry_byte_size / get_byte_size).
                 self._account_for_removed_entry(key, expire, value)
+                if self._max_size_bytes:
+                    container_before = super().__sizeof__()
                 super().__delitem__(key)
+                if self._max_size_bytes:
+                    # The container shrinks on delete (OrderedDict counts one
+                    # ordering node per entry), so track it as __setitem__ does
+                    self._self_byte_size = max(
+                        0,
+                        self._self_byte_size
+                        + super().__sizeof__()
+                        - container_before,
+                    )
 
     def __iter__(self) -> Iterable[Any]:
         """Yield non-expired keys. Purges expired items before iterating."""
@@ -411,12 +432,10 @@ class FaaSCacheDict(OrderedDict):
                 if default is _UNSET:
                     raise KeyError(key)
                 return default
-            expire, value = super().__getitem__(key)
-            if self.on_delete_callable:
-                # Buffer the hook; _locked fires it after the lock is released.
-                self._pending_on_delete.append((key, value))
-            self._account_for_removed_entry(key, expire, value)
-            super().__delitem__(key)
+            value = super().__getitem__(key)[1]
+            # __delitem__ is the single removal path: it buffers the on_delete
+            # hook and keeps the running byte total (entry and container) exact
+            self.__delitem__(key)
             return value
 
     def popitem(self, last: bool = True) -> tuple[Any, Any]:
@@ -425,12 +444,8 @@ class FaaSCacheDict(OrderedDict):
             if not super().__len__():
                 raise KeyError("EmptyCache")
             k = list(super().keys())[-1 if last else 0]
-            expire, value = super().__getitem__(k)
-            if self.on_delete_callable:
-                # Buffer the hook; _locked fires it after the lock is released.
-                self._pending_on_delete.append((k, value))
-            self._account_for_removed_entry(k, expire, value)
-            super().__delitem__(k)
+            value = super().__getitem__(k)[1]
+            self.__delitem__(k)  # the single removal path, as in pop()
             return k, value
 
     def clear(self) -> None:
