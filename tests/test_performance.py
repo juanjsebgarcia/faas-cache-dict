@@ -186,6 +186,10 @@ def test_full_byte_limited_cache_measures_once_per_batch():
     least two exact full-cache measures (plus one per extra eviction), making
     steady-state writes O(n). Evicting down to the low-water mark before
     re-measuring means one batch of measures covers many inserts.
+
+    Values are distinct objects: a constant like `"x" * 20` is one shared
+    string, which the per-entry total over-counts, adding measures that have
+    nothing to do with batching.
     """
     limit = 200_000
     faas = _MeasureCounting(max_size_bytes=limit)
@@ -194,16 +198,38 @@ def test_full_byte_limited_cache_measures_once_per_batch():
     # Fill until evictions have started, so the cache is at steady state
     inserted = 0
     while len(faas) == inserted:
-        faas[inserted] = "x" * 20
+        faas[inserted] = f"x{inserted:019d}"
         inserted += 1
 
     faas.measure_calls = 0
     writes = 1000
     for j in range(writes):
-        faas[("steady", j)] = "x" * 20
+        faas[("steady", j)] = f"s{j:019d}"
 
     assert faas.measure_calls < writes / 10, (
         f"{faas.measure_calls} full-cache measures for {writes} writes at capacity"
     )
     assert faas.get_byte_size() <= limit
+    faas.close()
+
+
+def test_limit_below_overhead_empties_cache_in_one_pass():
+    """
+    When the limit is lowered below the cache's irreducible overhead, nothing
+    can fit, and the cache must be emptied in one eviction pass, not one
+    entry (and two full-cache measures) at a time.
+
+    Shared values matter here: each eviction subtracts the shared object
+    again, so the running total falls faster than the real size and a pass
+    aimed at a non-zero target stopped after a single eviction.
+    """
+    faas = _MeasureCounting(max_size_bytes="10M")
+    faas.stop_purge_thread()
+    shared = "v" * 200  # one object in every entry, as in many real caches
+    for i in range(2000):
+        faas[i] = shared
+    faas.measure_calls = 0
+    faas.change_byte_size(int(faas._irreducible_byte_size() * 0.9))
+    assert len(faas) == 0
+    assert faas.measure_calls <= 3, f"{faas.measure_calls} full-cache measures"
     faas.close()

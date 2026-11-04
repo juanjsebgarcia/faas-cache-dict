@@ -26,6 +26,22 @@ _UNSET = object()
 _MAX_LOGGED_PURGE_FAILURES = 16
 
 
+def _measure_odict_node_bytes() -> int:
+    """
+    Bytes an OrderedDict spends per entry on its ordering node.
+
+    Measured rather than hard-coded, since it is a CPython internal: deleting
+    one entry frees exactly one node and never shrinks the hash table.
+    """
+    probe = OrderedDict.fromkeys(range(5))
+    before = OrderedDict.__sizeof__(probe)
+    del probe[0]
+    return before - OrderedDict.__sizeof__(probe)
+
+
+_ODICT_NODE_BYTES = _measure_odict_node_bytes()
+
+
 def _failure_signature(err: BaseException) -> tuple:
     """
     Identify a failure by its exception type and where it was raised.
@@ -48,6 +64,9 @@ class FaaSCacheDict(OrderedDict):
     # re-measuring exactly, so a full cache takes one exact measure per batch of
     # evictions rather than several per insert.
     _shrink_low_water = 0.9
+    # But never evict more than this fraction of the space entries can use
+    # (the limit less the cache's irreducible overhead) in one pass.
+    _shrink_max_batch_fraction = 0.25
 
     def __init__(
         self,
@@ -843,11 +862,32 @@ class FaaSCacheDict(OrderedDict):
                 # pass. Stop once empty: the residual is fixed structural overhead
                 # that eviction cannot reduce, so we must not loop forever on a
                 # tiny limit.
-                low_water = int(self._max_size_bytes * self._shrink_low_water)
                 while (
                     self.get_byte_size(skip_purge=True) > self._max_size_bytes
                     and super().__len__()
                 ):
+                    # Normally evict to the low-water fraction of the limit. But
+                    # when the size eviction cannot reduce (see
+                    # _irreducible_byte_size) sits near the limit, e.g. because
+                    # the dict's table grew before the limit was lowered, that
+                    # target lies at or below what only an empty cache reaches.
+                    # So one pass never evicts more than a set fraction of the
+                    # space entries can actually use. The floor only rises above
+                    # the usual target once that overhead passes 60% of the
+                    # limit. If even the overhead reaches the limit, nothing can
+                    # fit, so one pass evicts every entry (the floor would
+                    # otherwise sit above the limit and leave each pass evicting
+                    # just one).
+                    irreducible = self._irreducible_byte_size()
+                    entry_space = self._max_size_bytes - irreducible
+                    if entry_space <= 0:
+                        low_water = None  # evict everything, see below
+                    else:
+                        low_water = max(
+                            int(self._max_size_bytes * self._shrink_low_water),
+                            irreducible
+                            + int(entry_space * (1 - self._shrink_max_batch_fraction)),
+                        )
                     oldest_key = next(iter(super().__iter__()))
                     if oldest_key == protected_key:
                         # Everything older has been evicted and only the
@@ -858,13 +898,43 @@ class FaaSCacheDict(OrderedDict):
                         self.__delitem__(protected_key, is_terminal=False)
                         raise DataTooLarge
                     self._evict_oldest(evicted)
-                    while self._self_byte_size > low_water and super().__len__():
+                    # With no space for entries, evict every one in this pass
+                    # without consulting the running total: when values share
+                    # objects, each eviction subtracts them again, so the total
+                    # can hit zero long before the cache is empty.
+                    while super().__len__() and (
+                        low_water is None or self._self_byte_size > low_water
+                    ):
                         if next(iter(super().__iter__())) == protected_key:
                             # Only an exact measure may decide the new item does
                             # not fit (the running total can over-count), so
                             # stop here and let the next pass measure.
                             break
                         self._evict_oldest(evicted)
+
+    def _irreducible_byte_size(self) -> int:
+        """
+        The part of the cache's exact size that evicting every entry would leave.
+
+        That is the exact measure with the entries excluded (the instance's
+        attributes and anything they reference, plus the dict's hash table and
+        node index, which do not shrink on delete), less the per-entry ordering
+        nodes, which eviction does free. Measuring from the cache itself, rather
+        than from its attributes, keeps an `on_delete_callable` bound to an
+        object that holds the cache from walking back into every entry: the
+        cache is already visited. Building the exclusion list is O(n), but it
+        is only taken alongside an exact measure, which is O(n) already.
+        """
+        exclude = [self._pending_on_delete]
+        for key, entry in super().items():
+            exclude.append(key)
+            exclude.append(entry)
+        self._suppress_sizeof_purge = True
+        try:
+            measured = get_deep_byte_size(self, exclude=exclude)
+        finally:
+            self._suppress_sizeof_purge = False
+        return measured - super().__len__() * _ODICT_NODE_BYTES
 
     def _restore_evicted(self, evicted: list, pending_mark: int) -> None:
         """

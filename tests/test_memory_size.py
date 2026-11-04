@@ -436,6 +436,97 @@ def test_running_byte_total_tracks_dict_storage():
     faas.close()
 
 
+def test_insert_cannot_empty_cache_when_overhead_exceeds_low_water():
+    """
+    When fixed overhead sits above the low-water mark, an insert that crosses
+    the limit must evict only a few entries, not empty the cache trying to
+    reach a target it can never reach.
+
+    The dict's table does not shrink on delete, so a cache that grew large and
+    then had its limit lowered keeps most of the new limit as fixed overhead.
+    """
+    faas = FaaSCacheDict(max_size_bytes="10M")
+    faas.stop_purge_thread()
+    for i in range(1000, 6000):
+        faas[i] = i * 3
+    for i in range(1000, 5950):  # 50 entries left; the table stays large
+        del faas[i]
+    faas.change_byte_size(int(faas.get_byte_size() * 1.005))
+    assert faas._shrink_low_water * faas._max_size_bytes < super(
+        FaaSCacheDict, faas
+    ).__sizeof__()  # the precondition: overhead alone is above low-water
+
+    for i in range(10_000, 10_020):
+        faas[i] = i * 3
+    # A pass may evict up to a quarter of the entries, but must not empty it
+    assert len(faas) >= 25
+    assert faas.get_byte_size() <= faas._max_size_bytes
+    faas.close()
+
+
+def test_insert_cannot_empty_cache_when_fixed_overhead_tips_over_low_water():
+    """
+    When the size eviction cannot reduce (the instance's attributes plus the
+    dict's table and node index) sits between the low-water mark and the
+    limit, an overflowing insert must evict only part of the entries.
+
+    Regression: the low-water target was then below anything a non-empty
+    cache could reach, so every overflowing insert evicted all entries but
+    the new one (and an earlier fix that looked only at the dict's storage,
+    not the instance's own attributes, missed this case).
+    """
+    faas = FaaSCacheDict(max_size_bytes="10M")
+    faas.stop_purge_thread()
+    for i in range(1000, 1200):
+        faas[i] = i * 3
+    for i in range(1000, 1190):  # 10 entries left; the table stays grown
+        del faas[i]
+    limit = int(faas._irreducible_byte_size() / 0.93)
+    faas.change_byte_size(limit)
+    irreducible = faas._irreducible_byte_size()
+    assert limit * faas._shrink_low_water < irreducible < limit  # the precondition
+
+    sizes = []
+    for i in range(5000, 5030):
+        faas[i] = i * 3
+        sizes.append(len(faas))
+    assert min(sizes[1:]) >= 5, sizes
+    assert faas.get_byte_size() <= limit
+    faas.close()
+
+
+def test_irreducible_size_ignores_entries_reached_through_bound_hook():
+    """
+    An on_delete_callable bound to an object that holds the cache must not
+    make every entry look irreducible.
+
+    Regression: the irreducible-overhead measure walked from the cache's
+    attributes through the bound method to its owner, back to the cache and
+    into every entry, so the eviction cap applied on every pass.
+    """
+
+    class Service:
+        def __init__(self):
+            self.cache = FaaSCacheDict(
+                max_size_bytes="10M", on_delete_callable=self.on_evict
+            )
+            self.cache.stop_purge_thread()
+
+        def on_evict(self, key, value):
+            pass
+
+    service = Service()
+    for i in range(1000, 3000):
+        service.cache[i] = "v" * 50
+    irreducible = service.cache._irreducible_byte_size()
+    assert irreducible < service.cache.get_byte_size() * 0.5
+    # Evicting every entry would leave about this much, measured directly
+    for i in range(1000, 3000):
+        del service.cache[i]
+    assert abs(irreducible - service.cache.get_byte_size()) <= 64
+    service.cache.close()
+
+
 @pytest.mark.parametrize("remove", ["pop", "popitem"])
 def test_running_byte_total_exact_through_pop_and_popitem(remove):
     """
