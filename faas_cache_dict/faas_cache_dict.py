@@ -559,15 +559,12 @@ class FaaSCacheDict(OrderedDict):
             _assert(ttl >= 0, "TTL must be non-negative")
 
         with self._locked():
+            # Expiry is judged against the wall clock, as in expire_at, so a
+            # past `now` cannot revive a key that has already expired
             if self.is_expired(key):
                 self.__delitem__(key)
                 raise KeyError(key)
-            # Get value without affecting LRU order
-            value = super().__getitem__(key)[1]
-            if ttl is None:  # No expiry
-                super().__setitem__(key, (None, value))
-            else:
-                super().__setitem__(key, (now + ttl, value))
+            self._replace_expiry(key, None if ttl is None else now + ttl)
 
     def expire_at(self, key: Any, timestamp: float | int) -> None:
         """Set the key expire absolute timestamp (epoch seconds - ie `time.time()`)"""
@@ -576,9 +573,26 @@ class FaaSCacheDict(OrderedDict):
             if self.is_expired(key):
                 self.__delitem__(key)
                 raise KeyError(key)
-            # Get value without affecting LRU order
-            value = super().__getitem__(key)[1]
-            super().__setitem__(key, (timestamp, value))
+            self._replace_expiry(key, timestamp)
+
+    def _replace_expiry(self, key: Any, expire: float | int | None) -> None:
+        """
+        Replace an existing key's expiry, keeping its value and LRU position.
+
+        The stored `(expire, value)` tuple stays the same size, but the expiry
+        object itself may appear or disappear (`None` to a float adds one), so
+        the running byte total is adjusted by the difference. The limit itself
+        is enforced on the next write, as for any other small change.
+        """
+        old_expire, value = super().__getitem__(key)
+        super().__setitem__(key, (expire, value))
+        if self._max_size_bytes:
+            # An expiry is None, an int or a float, none of which reference
+            # anything, so its shallow size is its deep size. objsize counts
+            # None (a shared singleton) as 0.
+            self._self_byte_size += (
+                0 if expire is None else sys.getsizeof(expire)
+            ) - (0 if old_expire is None else sys.getsizeof(old_expire))
 
     def is_expired(self, key: Any, now: float | int | None = None) -> bool | None:
         """

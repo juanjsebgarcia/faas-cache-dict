@@ -228,6 +228,46 @@ def test_custom_now_parameter_in_set_ttl():
     assert actual_ttl > 150  # Should be around 160 seconds
 
 
+def test_set_ttl_with_past_now_cannot_revive_expired_key():
+    """
+    A key that has already expired by the wall clock stays expired, even when
+    set_ttl() is given an earlier `now`, matching expire_at().
+    """
+    faas = FaaSCacheDict()
+    faas.__setitem__("a", 1, expire_at=time.time() - 5)
+    with pytest.raises(KeyError):
+        faas.set_ttl("a", 100, now=time.time() - 10)
+    assert "a" not in faas
+    faas.close()
+
+
+def test_ttl_changes_keep_running_byte_total_exact():
+    """
+    Changing a key's expiry must keep the running byte total in step with the
+    cache's exact size.
+
+    Regression: set_ttl and expire_at replaced the stored entry without
+    adjusting the total, which drifted 24 bytes per key on going from no
+    expiry to a float expiry (and back).
+    """
+    faas = FaaSCacheDict(max_size_bytes="10M")
+    faas.stop_purge_thread()
+    for i in range(1000, 2000):
+        faas[i] = i * 3
+    exact = faas.get_byte_size(skip_purge=True)  # resyncs the running total
+
+    for i in range(1000, 2000):
+        faas.set_ttl(i, 100)
+    for i in range(1000, 1500):
+        faas.expire_at(i, int(time.time()) + 100)
+    for i in range(1500, 2000):
+        faas.set_ttl(i, None)
+    running = faas._self_byte_size
+    exact = faas.get_byte_size(skip_purge=True)
+    assert running == exact
+    faas.close()
+
+
 def test_very_large_ttl_precision():
     """Very large TTL values should maintain precision."""
     faas = FaaSCacheDict()
