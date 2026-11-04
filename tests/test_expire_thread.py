@@ -1,4 +1,5 @@
 import gc
+import logging
 import pickle
 import threading
 import time
@@ -33,6 +34,24 @@ class _UnsizeableValue:
 
     def __sizeof__(self):
         raise RuntimeError("unmeasurable")
+
+
+class _DifferentlyUnsizeableValue:
+    """Like _UnsizeableValue, but fails with a different exception."""
+
+    def __sizeof__(self):
+        raise ValueError("also unmeasurable")
+
+
+class _ChangingMessageUnsizeableValue:
+    """Fails like _UnsizeableValue, with a message that differs every time."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def __sizeof__(self):
+        self.calls += 1
+        raise RuntimeError(f"unmeasurable (attempt {self.calls})")
 
 
 def test_purge_thread_alive():
@@ -374,6 +393,79 @@ def test_purge_thread_survives_purge_cycle_exception():
     time.sleep(faas._auto_purge_seconds + 0.5)
     assert faas._purge_thread.is_alive()
     assert _raw_len(faas) == 1  # only the unexpired poison entry remains
+    faas.close()
+
+
+def test_repeated_purge_cycle_failure_logged_once(caplog):
+    """
+    A failure that repeats every purge cycle is logged as a warning once, not
+    every cycle, and is reported again only after a cycle has succeeded.
+
+    Regression: one unmeasurable value logged a warning with a full traceback
+    every cycle for the cache's whole lifetime (720 an hour by default).
+    """
+    caplog.set_level(logging.DEBUG, logger="faas_cache_dict")
+
+    def purge_warnings():
+        return [
+            r
+            for r in caplog.records
+            if r.levelno == logging.WARNING and "background purge cycle" in r.message
+        ]
+
+    faas = _FastPurge(default_ttl=60, max_size_bytes="1M")
+    holder = []
+    faas["poison"] = holder
+    holder.append(_UnsizeableValue())  # unmeasurable only after insertion
+
+    time.sleep(faas._auto_purge_seconds * 4 + 0.3)  # several failing cycles
+    assert len(purge_warnings()) == 1
+    assert any(
+        r.levelno == logging.DEBUG and "failed again" in r.message
+        for r in caplog.records
+    )
+
+    # A different failure is not hidden behind the first one
+    holder[:] = [_DifferentlyUnsizeableValue()]
+    time.sleep(faas._auto_purge_seconds * 2 + 0.3)
+    assert len(purge_warnings()) == 2
+
+    # Failures that alternate are each logged once, not on every switch
+    for _ in range(2):
+        holder[:] = [_UnsizeableValue()]
+        time.sleep(faas._auto_purge_seconds + 0.2)
+        holder[:] = [_DifferentlyUnsizeableValue()]
+        time.sleep(faas._auto_purge_seconds + 0.2)
+    assert len(purge_warnings()) == 2
+
+    # A successful cycle resets it, so the same failure is reported again
+    holder.clear()
+    time.sleep(faas._auto_purge_seconds * 2 + 0.3)
+    assert any("succeeded after failures" in r.message for r in caplog.records)
+    holder.append(_DifferentlyUnsizeableValue())
+    time.sleep(faas._auto_purge_seconds * 2 + 0.3)
+    assert len(purge_warnings()) == 3
+    faas.close()
+
+
+def test_purge_failure_with_changing_message_logged_once(caplog):
+    """
+    A recurring failure whose message changes every time (an object address,
+    a counter) is still recognised as the same failure and logged once.
+    """
+    caplog.set_level(logging.DEBUG, logger="faas_cache_dict")
+    faas = _FastPurge(default_ttl=60, max_size_bytes="1M")
+    holder = []
+    faas["poison"] = holder
+    holder.append(_ChangingMessageUnsizeableValue())
+
+    time.sleep(faas._auto_purge_seconds * 4 + 0.3)  # several failing cycles
+    warnings = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING and "background purge cycle" in r.message
+    ]
+    assert len(warnings) == 1
     faas.close()
 
 

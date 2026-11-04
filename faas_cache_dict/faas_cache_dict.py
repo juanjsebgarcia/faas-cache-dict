@@ -2,6 +2,7 @@ import gc
 import logging
 import sys
 import time
+import traceback
 import weakref
 from collections import OrderedDict
 from contextlib import contextmanager
@@ -19,6 +20,22 @@ logger = logging.getLogger(__name__)
 # Sentinel marking "no key is protected from eviction" - distinct from any real
 # key, including None.
 _UNSET = object()
+
+# Distinct background purge failures logged as warnings before a successful cycle
+# resets them; beyond this, further new failures are logged at debug level.
+_MAX_LOGGED_PURGE_FAILURES = 16
+
+
+def _failure_signature(err: BaseException) -> tuple:
+    """
+    Identify a failure by its exception type and where it was raised.
+
+    The message is deliberately left out: it may embed object addresses,
+    counters or timestamps that differ every time the same failure recurs.
+    """
+    frames = traceback.extract_tb(err.__traceback__)
+    origin = (frames[-1].filename, frames[-1].lineno) if frames else None
+    return type(err), origin
 
 
 class FaaSCacheDict(OrderedDict):
@@ -611,6 +628,13 @@ class FaaSCacheDict(OrderedDict):
         Thread function which will run in the background and purge expired keys.
         Uses a weak reference to allow garbage collection of the parent object.
         """
+        # A failure that repeats every cycle (e.g. one unmeasurable value) is
+        # logged with its traceback once, then at debug level until a cycle
+        # succeeds, so it cannot flood the logs every few seconds forever. Each
+        # distinct failure (see _failure_signature) is logged once, so failures
+        # that alternate do not flood either. The set is bounded in case
+        # signatures keep changing.
+        logged_failures = set()
         while True:
             self = weak_self()
             if self is None or self._stop_purge:
@@ -646,11 +670,26 @@ class FaaSCacheDict(OrderedDict):
                 # remaining lifetime. Log it and retry next cycle. The parent
                 # cannot have been collected mid-cycle - this thread holds a
                 # strong reference to it throughout.
-                logger.warning(
-                    "Exception during background purge cycle: %s",
-                    err,
-                    exc_info=True,
-                )
+                signature = _failure_signature(err)
+                if (
+                    signature in logged_failures
+                    or len(logged_failures) >= _MAX_LOGGED_PURGE_FAILURES
+                ):
+                    logger.debug(
+                        "Background purge cycle failed again: %s", err, exc_info=True
+                    )
+                else:
+                    logger.warning(
+                        "Exception during background purge cycle: %s "
+                        "(repeats are logged at debug level until a cycle succeeds)",
+                        err,
+                        exc_info=True,
+                    )
+                    logged_failures.add(signature)
+            else:
+                if logged_failures:
+                    logger.info("Background purge cycle succeeded after failures")
+                    logged_failures.clear()
 
     ###
     # Memory size functions
