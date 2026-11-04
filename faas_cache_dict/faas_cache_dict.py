@@ -5,9 +5,10 @@ import time
 import traceback
 import weakref
 from collections import OrderedDict
+from collections.abc import Callable, Iterable
 from contextlib import contextmanager
 from threading import RLock, Thread
-from typing import Any, Callable, Iterable
+from typing import Any
 
 from .exceptions import DataTooLarge
 from .size_utils import get_deep_byte_size, user_input_byte_size_to_bytes
@@ -114,9 +115,7 @@ class FaaSCacheDict(OrderedDict):
         self._suppress_sizeof_purge = False
 
         # CACHE LENGTH
-        _assert(
-            _is_int(max_items) or (max_items is None), "Invalid max items limit"
-        )
+        _assert(_is_int(max_items) or (max_items is None), "Invalid max items limit")
         if max_items is not None:
             _assert(max_items > 0, "Max items limit must be >0")
         self._max_items = max_items
@@ -300,9 +299,7 @@ class FaaSCacheDict(OrderedDict):
                     # ordering node per entry), so track it as __setitem__ does
                     self._self_byte_size = max(
                         0,
-                        self._self_byte_size
-                        + super().__sizeof__()
-                        - container_before,
+                        self._self_byte_size + super().__sizeof__() - container_before,
                     )
 
     def __iter__(self) -> Iterable[Any]:
@@ -612,9 +609,9 @@ class FaaSCacheDict(OrderedDict):
             # An expiry is None, an int or a float, none of which reference
             # anything, so its shallow size is its deep size. objsize counts
             # None (a shared singleton) as 0.
-            self._self_byte_size += (
-                0 if expire is None else sys.getsizeof(expire)
-            ) - (0 if old_expire is None else sys.getsizeof(old_expire))
+            self._self_byte_size += (0 if expire is None else sys.getsizeof(expire)) - (
+                0 if old_expire is None else sys.getsizeof(old_expire)
+            )
 
     def is_expired(self, key: Any, now: float | int | None = None) -> bool | None:
         """
@@ -648,9 +645,7 @@ class FaaSCacheDict(OrderedDict):
         capacity, ...) was a large and needless cost.
         """
         with self._locked():
-            _remove = [
-                key for key in list(super().__iter__()) if self.is_expired(key)
-            ]
+            _remove = [key for key in list(super().__iter__()) if self.is_expired(key)]
             for key in _remove:
                 self.__delitem__(key, ignore_missing=True)
             return bool(_remove)
@@ -788,9 +783,7 @@ class FaaSCacheDict(OrderedDict):
         """Calculate and set the new internal cache size"""
         self._self_byte_size = self.get_byte_size(skip_purge)
 
-    def _entry_byte_size(
-        self, key: Any, expire: float | int | None, value: Any
-    ) -> int:
+    def _entry_byte_size(self, key: Any, expire: float | int | None, value: Any) -> int:
         """
         Deep byte size of a single stored entry: its key plus the (expire, value)
         tuple it is wrapped in.
@@ -970,9 +963,7 @@ class FaaSCacheDict(OrderedDict):
 
         :param max_items: (int) optional: Max length of cache, `None` to disable max-length
         """
-        _assert(
-            _is_int(max_items) or (max_items is None), "Invalid max items limit"
-        )
+        _assert(_is_int(max_items) or (max_items is None), "Invalid max items limit")
         if max_items is not None:
             _assert(max_items > 0, "Max items limit must be >0")
         with self._locked():

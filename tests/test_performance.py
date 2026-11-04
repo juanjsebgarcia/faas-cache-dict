@@ -148,7 +148,9 @@ def test_insert_throughput_is_flat_across_sizes():
     """
     small = _mean_insert_seconds(lambda: FaaSCacheDict(default_ttl=60), fill_to=200)
     large = _mean_insert_seconds(lambda: FaaSCacheDict(default_ttl=60), fill_to=4000)
-    assert large < small * 6, f"per-insert time grew {large / small:.1f}x with cache size"
+    assert (
+        large < small * 6
+    ), f"per-insert time grew {large / small:.1f}x with cache size"
 
 
 def test_byte_limited_insert_throughput_is_flat():
@@ -206,9 +208,9 @@ def test_full_byte_limited_cache_measures_once_per_batch():
     for j in range(writes):
         faas[("steady", j)] = f"s{j:019d}"
 
-    assert faas.measure_calls < writes / 10, (
-        f"{faas.measure_calls} full-cache measures for {writes} writes at capacity"
-    )
+    assert (
+        faas.measure_calls < writes / 10
+    ), f"{faas.measure_calls} full-cache measures for {writes} writes at capacity"
     assert faas.get_byte_size() <= limit
     faas.close()
 

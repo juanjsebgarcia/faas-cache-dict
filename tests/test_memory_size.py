@@ -452,9 +452,10 @@ def test_insert_cannot_empty_cache_when_overhead_exceeds_low_water():
     for i in range(1000, 5950):  # 50 entries left; the table stays large
         del faas[i]
     faas.change_byte_size(int(faas.get_byte_size() * 1.005))
-    assert faas._shrink_low_water * faas._max_size_bytes < super(
-        FaaSCacheDict, faas
-    ).__sizeof__()  # the precondition: overhead alone is above low-water
+    assert (
+        faas._shrink_low_water * faas._max_size_bytes
+        < super(FaaSCacheDict, faas).__sizeof__()
+    )  # the precondition: overhead alone is above low-water
 
     for i in range(10_000, 10_020):
         faas[i] = i * 3
