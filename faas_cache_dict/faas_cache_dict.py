@@ -27,6 +27,10 @@ class FaaSCacheDict(OrderedDict):
     """
 
     _auto_purge_seconds = 5
+    # When the byte limit is exceeded, evict down to this fraction of it before
+    # re-measuring exactly, so a full cache takes one exact measure per batch of
+    # evictions rather than several per insert.
+    _shrink_low_water = 0.9
 
     def __init__(
         self,
@@ -759,14 +763,18 @@ class FaaSCacheDict(OrderedDict):
         with self._locked():
             self._purge_expired()
             if self._max_size_bytes:
-                # Enforce on an EXACT measure (re-measured each step) so the limit
-                # is a hard ceiling and objects shared between entries are not
-                # double-counted into spurious evictions. This is O(n) per step,
-                # but callers only reach here when the cheap running total reports
-                # the cache is at its byte limit - inserts well under it never
-                # enforce. get_byte_size also resyncs the running total to exact.
-                # Stop once empty: the residual is fixed structural overhead that
-                # eviction cannot reduce, so we must not loop forever on a tiny limit.
+                # The limit is decided on an EXACT measure, so it is a hard
+                # ceiling and objects shared between entries are not
+                # double-counted into spurious evictions. An exact measure is
+                # O(n), so it is taken once per batch rather than per eviction:
+                # each pass evicts at least one entry, then keeps evicting on the
+                # cheap running total down to the low-water mark before measuring
+                # again. get_byte_size also resyncs the running total to exact, so
+                # a running total that had drifted low is corrected on the next
+                # pass. Stop once empty: the residual is fixed structural overhead
+                # that eviction cannot reduce, so we must not loop forever on a
+                # tiny limit.
+                low_water = int(self._max_size_bytes * self._shrink_low_water)
                 while (
                     self.get_byte_size(skip_purge=True) > self._max_size_bytes
                     and super().__len__()
@@ -781,6 +789,13 @@ class FaaSCacheDict(OrderedDict):
                         self.__delitem__(protected_key, is_terminal=False)
                         raise DataTooLarge
                     self._evict_oldest(evicted)
+                    while self._self_byte_size > low_water and super().__len__():
+                        if next(iter(super().__iter__())) == protected_key:
+                            # Only an exact measure may decide the new item does
+                            # not fit (the running total can over-count), so
+                            # stop here and let the next pass measure.
+                            break
+                        self._evict_oldest(evicted)
 
     def _restore_evicted(self, evicted: list, pending_mark: int) -> None:
         """

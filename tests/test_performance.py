@@ -163,3 +163,47 @@ def test_byte_limited_insert_throughput_is_flat():
     small = _mean_insert_seconds(make, fill_to=200)
     large = _mean_insert_seconds(make, fill_to=4000)
     assert large < small * 6, f"byte-limited per-insert time grew {large / small:.1f}x"
+
+
+class _MeasureCounting(FaaSCacheDict):
+    """Cache which counts exact full-cache byte measures."""
+
+    def __init__(self, *args, **kwargs):
+        self.measure_calls = 0
+        super().__init__(*args, **kwargs)
+
+    def get_byte_size(self, skip_purge: bool = False) -> int:
+        self.measure_calls += 1
+        return super().get_byte_size(skip_purge)
+
+
+def test_full_byte_limited_cache_measures_once_per_batch():
+    """
+    A byte-limited cache at capacity must not measure the whole cache on every
+    write.
+
+    Regression: each insert into a full cache crossed the limit and ran at
+    least two exact full-cache measures (plus one per extra eviction), making
+    steady-state writes O(n). Evicting down to the low-water mark before
+    re-measuring means one batch of measures covers many inserts.
+    """
+    limit = 200_000
+    faas = _MeasureCounting(max_size_bytes=limit)
+    faas.stop_purge_thread()  # only count measures taken by the write path
+
+    # Fill until evictions have started, so the cache is at steady state
+    inserted = 0
+    while len(faas) == inserted:
+        faas[inserted] = "x" * 20
+        inserted += 1
+
+    faas.measure_calls = 0
+    writes = 1000
+    for j in range(writes):
+        faas[("steady", j)] = "x" * 20
+
+    assert faas.measure_calls < writes / 10, (
+        f"{faas.measure_calls} full-cache measures for {writes} writes at capacity"
+    )
+    assert faas.get_byte_size() <= limit
+    faas.close()
