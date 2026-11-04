@@ -479,7 +479,9 @@ class FaaSCacheDict(OrderedDict):
             self._purge_expired()
             if not super().__len__():
                 raise KeyError("EmptyCache")
-            k = list(super().keys())[-1 if last else 0]
+            # O(1): take the end key without copying every key into a list
+            keys = super().keys()
+            k = next(reversed(keys)) if last else next(iter(keys))
             value = super().__getitem__(k)[1]
             self.__delitem__(k)  # the single removal path, as in pop()
             return k, value
