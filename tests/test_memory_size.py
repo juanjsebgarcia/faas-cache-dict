@@ -480,13 +480,9 @@ def test_failed_oversize_update_preserves_existing_value():
     DataTooLarge AND leave the previously stored value intact.
 
     Regression: the old entry was replaced before byte-limit enforcement ran,
-    so a failed update destroyed it.
-
-    LRU position: enforcement only fails once every OTHER entry has been
-    evicted trying to make room (the updated key is moved to the tail first,
-    so all its neighbours are older and go before it). The restored key is
-    therefore always the sole occupant - head and tail at once - and behaves
-    as the oldest entry from then on. This test pins that whole state.
+    so a failed update destroyed it. Its neighbours, evicted while trying to
+    make room, must come back too, in their original order. The updated key's
+    LRU recency is refreshed rather than restored, so it ends up newest.
     """
     faas = FaaSCacheDict()
     faas["a"] = 1
@@ -504,13 +500,63 @@ def test_failed_oversize_update_preserves_existing_value():
     with pytest.raises(DataTooLarge):
         faas["k"] = big
 
-    # The previous value survives the failed update, as the cache's sole
-    # occupant: its neighbours were evicted in the attempt to make room.
+    # The previous value and its neighbours all survive the failed update
+    assert faas.keys() == ["a", "b", "k"]
     assert faas["k"] == "small"
-    assert faas.keys() == ["k"]
+    assert faas["a"] == 1
+    assert faas["b"] == 2
+    faas.close()
 
-    # The restored key holds its standing as the oldest entry: later inserts
-    # queue behind it, they do not displace it from the head.
-    faas["z"] = 3
-    assert faas.keys() == ["k", "z"]
+
+def test_rejected_insert_keeps_existing_items_and_skips_their_hooks():
+    """
+    An insert rejected with DataTooLarge must leave the cache exactly as it
+    was, and must not fire on_delete for entries it evicted along the way.
+
+    Regression: the up-front check ignores the cache's own overhead, so an item
+    that passes it but cannot fit evicted every older entry (firing their
+    hooks) before DataTooLarge was raised, emptying the cache.
+    """
+    fired = []
+    faas = FaaSCacheDict(
+        max_size_bytes=4000,
+        on_delete_callable=lambda key, value: fired.append(key),
+    )
+    for i in range(5):
+        faas[i] = i
+
+    with pytest.raises(DataTooLarge):
+        faas["big"] = "y" * 3800
+
+    assert faas.keys() == [0, 1, 2, 3, 4]
+    assert fired == []
+    # The running total was resynced, so normal inserts still work
+    faas["small"] = "ok"
+    assert faas["small"] == "ok"
+    faas.close()
+
+
+def test_rejected_insert_at_item_capacity_keeps_evicted_item():
+    """
+    At max_items capacity an insert evicts the LRU entry before byte-limit
+    enforcement runs; if the insert is then rejected, that entry comes back.
+    """
+    fired = []
+    faas = FaaSCacheDict(
+        max_size_bytes=4000,
+        max_items=3,
+        on_delete_callable=lambda key, value: fired.append(key),
+    )
+    for i in range(3):
+        faas[i] = i
+
+    with pytest.raises(DataTooLarge):
+        faas["big"] = "y" * 3800
+
+    assert faas.keys() == [0, 1, 2]
+    assert fired == []
+    # A real eviction afterwards still fires its hook as normal
+    faas[3] = 3
+    assert faas.keys() == [1, 2, 3]
+    assert fired == [0]
     faas.close()

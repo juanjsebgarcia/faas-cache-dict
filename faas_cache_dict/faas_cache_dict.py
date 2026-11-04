@@ -180,6 +180,11 @@ class FaaSCacheDict(OrderedDict):
                 raise DataTooLarge
 
             key_present = key in super().keys()
+            # Entries evicted to make room for this insert, and where their
+            # on_delete hooks start in the pending buffer, so a rejected insert
+            # can put them back and cancel the hooks (see _restore_evicted).
+            evicted = []
+            pending_mark = len(self._pending_on_delete)
 
             if (
                 self._max_items is not None
@@ -191,7 +196,7 @@ class FaaSCacheDict(OrderedDict):
                 # is room for the new key. Below capacity we touch nothing.
                 self._purge_expired()
                 while super().__len__() >= self._max_items:
-                    self._evict_oldest()
+                    self._evict_oldest(evicted)
 
             if key_present:
                 # Refreshing an existing key: drop its old contribution first.
@@ -204,16 +209,17 @@ class FaaSCacheDict(OrderedDict):
 
             if self._max_size_bytes and self._self_byte_size > self._max_size_bytes:
                 try:
-                    self._shrink_to_fit_byte_size(protected_key=key)
+                    self._shrink_to_fit_byte_size(protected_key=key, evicted=evicted)
                 except DataTooLarge:
+                    # A rejected insert must leave the cache as it found it. The
+                    # shrink loop has already removed the new entry and evicted
+                    # everything older, so put the evicted entries back.
+                    self._restore_evicted(evicted, pending_mark)
                     if key_present:
                         # A failed update must not destroy the previous value.
-                        # The shrink loop has already removed the new entry (and
-                        # evicted everything older), so the cache is empty here:
-                        # reinstate the old entry and resync the size exactly.
                         # The key's LRU recency is refreshed, not restored.
                         super().__setitem__(key, (old_expire, old_value))
-                        self._set_self_byte_size(skip_purge=True)
+                    self._set_self_byte_size(skip_purge=True)
                     raise
 
     def __delitem__(
@@ -738,14 +744,17 @@ class FaaSCacheDict(OrderedDict):
         if self._self_byte_size < 0:
             self._self_byte_size = 0
 
-    def _shrink_to_fit_byte_size(self, protected_key: Any = _UNSET) -> None:
+    def _shrink_to_fit_byte_size(
+        self, protected_key: Any = _UNSET, evicted: list | None = None
+    ) -> None:
         """
         As required delete the oldest LRU items in the cache dict until size criteria is met.
 
-        When called after inserting ``protected_key``, that key is never silently
+        When called after inserting `protected_key`, that key is never silently
         evicted to make itself fit: if it cannot fit even on its own (once cache
-        overhead is accounted for), it is removed and ``DataTooLarge`` is raised
-        rather than discarding it without warning.
+        overhead is accounted for), it is removed and `DataTooLarge` is raised
+        rather than discarding it without warning. Entries evicted along the way
+        are appended to `evicted`, when given, so the caller can restore them.
         """
         with self._locked():
             self._purge_expired()
@@ -771,7 +780,30 @@ class FaaSCacheDict(OrderedDict):
                         # cached) and signal failure instead of dropping it silently.
                         self.__delitem__(protected_key, is_terminal=False)
                         raise DataTooLarge
-                    self._evict_oldest()
+                    self._evict_oldest(evicted)
+
+    def _restore_evicted(self, evicted: list, pending_mark: int) -> None:
+        """
+        Put back entries evicted for an insert that was then rejected.
+
+        `evicted` holds `(key, (expire, value))` pairs in eviction order, oldest
+        first, so they return to the head of the LRU order as they were. Their
+        on_delete hooks are still buffered (hooks only fire once the outermost
+        lock is released), so they are cancelled here: the entries were never
+        really removed. Hooks buffered before `pending_mark`, or for expired
+        entries purged during the insert, are left to fire.
+        """
+        if not evicted:
+            return
+        restored_keys = {key for key, _ in evicted}
+        self._pending_on_delete[pending_mark:] = [
+            (key, value)
+            for key, value in self._pending_on_delete[pending_mark:]
+            if key not in restored_keys
+        ]
+        for key, entry in reversed(evicted):
+            super().__setitem__(key, entry)
+            super().move_to_end(key, last=False)
 
     ###
     # LRU functions
@@ -796,17 +828,21 @@ class FaaSCacheDict(OrderedDict):
                 while self._max_items < super().__len__():
                     self._evict_oldest()
 
-    def _evict_oldest(self) -> None:
+    def _evict_oldest(self, evicted: list | None = None) -> None:
         """
         Remove the LRU (head) item without purging first.
 
         The cheap eviction primitive for loops that have already purged. Callers
         wanting expired items reclaimed must purge beforehand. Raises
-        KeyError('EmptyCache') if the cache is empty.
+        KeyError('EmptyCache') if the cache is empty. When `evicted` is given,
+        the removed `(key, (expire, value))` pair is appended to it so the
+        eviction can be undone (see _restore_evicted).
         """
         oldest_key = next(iter(super().__iter__()), _UNSET)
         if oldest_key is _UNSET:
             raise KeyError("EmptyCache")
+        if evicted is not None:
+            evicted.append((oldest_key, super().__getitem__(oldest_key)))
         self.__delitem__(oldest_key)
 
     def delete_oldest_item(self) -> None:
