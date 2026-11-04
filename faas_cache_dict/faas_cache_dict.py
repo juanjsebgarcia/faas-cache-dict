@@ -531,7 +531,8 @@ class FaaSCacheDict(OrderedDict):
     # TTL functions
     ###
     def get_ttl(self, key: Any, now: float | int | None = None) -> float | None:
-        """Return remaining delta TTL for a key from now, or None if no TTL is set.
+        """
+        Return remaining delta TTL for a key from now, or None if no TTL is set.
 
         Raises KeyError if the key doesn't exist or has expired.
         """
@@ -712,7 +713,7 @@ class FaaSCacheDict(OrderedDict):
         """
         Get self size in bytes.
 
-        Always recomputes and caches the deep byte size. ``skip_purge=True`` only
+        Always recomputes and caches the deep byte size. `skip_purge=True` only
         skips the expiry purge beforehand (used from within a purge to avoid
         re-entrancy); it is not a shortcut that returns a stale cached value.
         """

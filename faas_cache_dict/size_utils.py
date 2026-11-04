@@ -37,7 +37,7 @@ def get_deep_byte_size(obj: Any, exclude: Any = None) -> int:
     so the result reflects the cached data rather than fixed library overhead
     (objsize would otherwise attribute ~135 KB of interpreter state to them).
 
-    ``exclude`` is an optional iterable of objects whose subtrees are excluded
+    `exclude` is an optional iterable of objects whose subtrees are excluded
     from the measurement (e.g. the cache's pending-callback buffer, which transiently
     holds already-removed entries that must not be counted toward the size).
     """
