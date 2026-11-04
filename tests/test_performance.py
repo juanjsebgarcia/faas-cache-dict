@@ -119,7 +119,10 @@ def test_enabling_byte_limit_later_seeds_running_total():
     faas["a"] = "x" * 1000
     assert faas._self_byte_size == 0  # untracked while unlimited
     faas.change_byte_size("1M")
-    assert faas._self_byte_size == faas.get_byte_size()
+    # Within a few bytes, not exact: the measure includes the cache's own
+    # _self_byte_size attribute, whose int object can change size between
+    # measures (0 is 24 bytes on Python 3.10, other ints 28)
+    assert abs(faas._self_byte_size - faas.get_byte_size()) <= 64
     faas.change_byte_size(None)
     assert faas._self_byte_size == 0
     assert "current_memory_bytes=None" in repr(faas)
