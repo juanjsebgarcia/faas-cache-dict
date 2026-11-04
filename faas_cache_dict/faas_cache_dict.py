@@ -92,10 +92,13 @@ class FaaSCacheDict(OrderedDict):
         super().__init__()
         # Seed the running byte total with the empty-cache overhead, so the
         # incremental size (maintained per insert/delete) includes it; then load
-        # any initial items and resync to an exact measure.
-        self._set_self_byte_size(skip_purge=True)
+        # any initial items and resync to an exact measure. Without a byte limit
+        # no total is kept, so nothing is measured.
+        if self._max_size_bytes:
+            self._set_self_byte_size(skip_purge=True)
         self.update(*args, **kwargs)
-        self._set_self_byte_size(skip_purge=True)
+        if self._max_size_bytes:
+            self._set_self_byte_size(skip_purge=True)
 
         # Thread to purge expired data
         self._stop_purge = False
@@ -161,7 +164,13 @@ class FaaSCacheDict(OrderedDict):
             elif self.default_ttl is not None:
                 expire = time.time() + self.default_ttl
 
-            new_entry_size = self._entry_byte_size(key, expire, value)
+            # Only byte-limited caches keep a running byte total. Measuring is a
+            # deep objsize walk of everything reachable from the key and value,
+            # which for objects holding loggers, sessions or mocks can be huge
+            # or never terminate, so caches without a byte limit never pay it.
+            new_entry_size = 0
+            if self._max_size_bytes:
+                new_entry_size = self._entry_byte_size(key, expire, value)
 
             if self._max_size_bytes and new_entry_size > self._max_size_bytes:
                 # Cheap up-front reject for an item that cannot fit even on its
@@ -260,7 +269,8 @@ class FaaSCacheDict(OrderedDict):
                 self.default_ttl,
                 self._max_size_user,
                 self._max_items,
-                self._self_byte_size,
+                # Only tracked under a byte limit; get_byte_size() measures on demand
+                self._self_byte_size if self._max_size_bytes else None,
                 super().__len__(),
             )
 
@@ -313,8 +323,10 @@ class FaaSCacheDict(OrderedDict):
         for key, value in pickled_items:
             super().__setitem__(key, value)
 
-        # Recalculate byte size after restoring items
-        self._set_self_byte_size(skip_purge=True)
+        # Recalculate byte size after restoring items, if a limit needs it
+        self._self_byte_size = 0
+        if self._max_size_bytes:
+            self._set_self_byte_size(skip_purge=True)
 
     def __sizeof__(self) -> int:
         with self._locked():
@@ -420,7 +432,8 @@ class FaaSCacheDict(OrderedDict):
             for key in list(super().__iter__()):
                 self.__delitem__(key, ignore_missing=True)
             # Resync the (now empty) cache size to an exact measure.
-            self._set_self_byte_size(skip_purge=True)
+            if self._max_size_bytes:
+                self._set_self_byte_size(skip_purge=True)
 
     def stop_purge_thread(self) -> None:
         """Stop the background purge thread and release resources."""
@@ -662,10 +675,13 @@ class FaaSCacheDict(OrderedDict):
         with self._locked():
             self._max_size_user = max_size_bytes
             self._max_size_bytes = None
+            self._self_byte_size = 0
             if self._max_size_user is not None:
                 self._max_size_bytes = user_input_byte_size_to_bytes(
                     self._max_size_user
                 )
+            # With a limit set, this always takes at least one exact measure,
+            # which seeds the running total (not kept while there was no limit).
             self._shrink_to_fit_byte_size()
 
     def _set_self_byte_size(self, skip_purge: bool = False) -> None:
@@ -700,6 +716,9 @@ class FaaSCacheDict(OrderedDict):
         enforcement. The background thread resyncs the total to an exact measure
         each cycle, so any accumulated drift self-heals within a purge interval.
         """
+        if not self._max_size_bytes:
+            # No byte limit, so no running total to maintain (see __setitem__)
+            return
         try:
             entry_size = self._entry_byte_size(key, expire, value)
         except Exception as err:

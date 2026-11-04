@@ -12,6 +12,7 @@ so they distinguish O(n) from O(n^2) without being flaky under load.
 """
 
 import time
+from unittest.mock import MagicMock
 
 import faas_cache_dict.faas_cache_dict as fcd
 from faas_cache_dict import FaaSCacheDict
@@ -37,7 +38,8 @@ def test_insert_sizes_only_one_entry_not_whole_cache(monkeypatch):
 
     monkeypatch.setattr(fcd, "get_deep_byte_size", counting)
 
-    faas = FaaSCacheDict(default_ttl=60)
+    # Only byte-limited caches size entries at all
+    faas = FaaSCacheDict(default_ttl=60, max_size_bytes="500M")
     value = "v" * 500
 
     # One insert into a near-empty cache.
@@ -58,6 +60,69 @@ def test_insert_sizes_only_one_entry_not_whole_cache(monkeypatch):
         f"per-insert sizing work grew {large / small:.0f}x with cache size "
         f"(small={small} bytes, large={large} bytes) - looks like a full-cache rescan"
     )
+    faas.close()
+
+
+def test_cache_without_byte_limit_never_deep_sizes(monkeypatch):
+    """
+    A cache with no byte limit must not walk its keys or values with objsize.
+
+    Regression: every insert and removal deep-sized the entry even with no
+    limit set. objsize follows every reference, so caching an object that
+    reaches a logger, a test session or a MagicMock walked far more than the
+    entry itself, or never terminated (a MagicMock spawns new children each
+    time objsize probes it).
+    """
+    calls = {"count": 0}
+    real_get_deep_byte_size = fcd.get_deep_byte_size
+
+    def counting(obj, exclude=None):
+        calls["count"] += 1
+        return real_get_deep_byte_size(obj, exclude=exclude)
+
+    monkeypatch.setattr(fcd, "get_deep_byte_size", counting)
+
+    faas = FaaSCacheDict(60, None, 2, None, {"seed": 1})
+    faas["a"] = 1
+    faas["a"] = 2  # replace
+    faas["b"] = 3  # evicts the LRU entry
+    del faas["a"]
+    faas.pop("b")
+    faas["c"] = 4
+    faas.purge()
+    repr(faas)
+    faas.close()
+
+    assert calls["count"] == 0
+
+
+def test_cache_without_byte_limit_accepts_unmeasurable_values():
+    """
+    Values objsize cannot measure, or would walk forever, are fine to cache
+    when no byte limit is set.
+    """
+    mock = MagicMock()
+    faas = FaaSCacheDict(default_ttl=60, max_items=1)
+    faas["mock"] = mock
+    assert faas["mock"] is mock
+    faas["other"] = 1  # evicts the mock
+    assert "mock" not in faas
+    faas.close()
+
+
+def test_enabling_byte_limit_later_seeds_running_total():
+    """
+    Turning a byte limit on after inserting into an unlimited cache must
+    measure exactly, so later inserts enforce against a correct total.
+    """
+    faas = FaaSCacheDict(default_ttl=60)
+    faas["a"] = "x" * 1000
+    assert faas._self_byte_size == 0  # untracked while unlimited
+    faas.change_byte_size("1M")
+    assert faas._self_byte_size == faas.get_byte_size()
+    faas.change_byte_size(None)
+    assert faas._self_byte_size == 0
+    assert "current_memory_bytes=None" in repr(faas)
     faas.close()
 
 

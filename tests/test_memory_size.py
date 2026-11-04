@@ -341,7 +341,7 @@ def test_cached_byte_size_fresh_after_purge_expired():
     After _purge_expired removes items, the cached _self_byte_size must reflect
     the reduced size, not a stale pre-purge value (finding #6).
     """
-    faas = FaaSCacheDict(default_ttl=0.05)
+    faas = FaaSCacheDict(default_ttl=0.05, max_size_bytes="10M")
     faas["big"] = "x" * 200_000
     assert faas._self_byte_size > 100_000  # cached reflects the big item
     time.sleep(0.1)
@@ -351,7 +351,7 @@ def test_cached_byte_size_fresh_after_purge_expired():
 
 def test_cached_byte_size_fresh_after_clear():
     """purge()/clear() must update the cached size, not leave it stale (finding #6)."""
-    faas = FaaSCacheDict()
+    faas = FaaSCacheDict(max_size_bytes="10M")
     faas["k"] = "y" * 200_000
     assert faas._self_byte_size > 100_000
     faas.clear()
@@ -360,7 +360,7 @@ def test_cached_byte_size_fresh_after_clear():
 
 def test_cached_byte_size_set_at_construction():
     """__init__ must compute the cached size, not leave it at 0 (finding #6)."""
-    faas = FaaSCacheDict(None, None, None, None, {"a": 1, "b": 2})
+    faas = FaaSCacheDict(None, "10M", None, None, {"a": 1, "b": 2})
     assert faas._self_byte_size > 0
 
 
@@ -389,7 +389,7 @@ def test_byte_size_counts_shared_values_per_entry():
     incremental sizing (finding #8); get_byte_size() gives an exact measure.
     """
     big = "x" * 100_000
-    faas = FaaSCacheDict()
+    faas = FaaSCacheDict(max_size_bytes="10M")
     faas["a"] = big
     exact_with_one = faas.get_byte_size()  # exact: counts `big` once, resyncs total
     faas["b"] = big  # same object

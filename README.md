@@ -237,6 +237,12 @@ when a write reaches the limit the cache re-measures its size exactly and evicts
 (that write costs O(n)). So inserts are fast until you are actually at capacity, and the
 cache never exceeds the limit for normal (immutable/serialised) values. `get_byte_size()`
 returns the exact size on demand.
+- Byte sizes are measured with `objsize`, which follows **every reference** reachable
+from a key or value. Caching an object that holds a logger, a connection pool, a
+framework session or a `MagicMock` can make each measure walk far more than the object
+itself, or never finish. Sizing only happens when `max_size_bytes` is set: caches without
+a byte limit never deep-size their contents, and `current_memory_bytes` in `repr()` is
+`None` for them (call `get_byte_size()` to measure on demand).
 - A value **mutated in place** after insertion is the one exception: the cache only holds
 a reference, so it cannot see a stored object grow without re-measuring it. Such growth
 can temporarily exceed the limit, but the background purge thread re-measures and enforces
